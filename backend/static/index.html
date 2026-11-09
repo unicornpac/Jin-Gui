@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教师管理端 - 《金匮要略》临床思辨训练</title>
+<style>
+:root {
+  --bg: #f5efe0; --card: #fff; --text: #3d2b1f; --muted: #8a7a6a;
+  --primary: #8b5a2b; --border: #e0d5c0; --hover: #fdfaf3;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+.header {
+  background:linear-gradient(135deg, #5c3d2e 0%, #8b5a2b 100%);
+  color:#f5efe0; padding:10px 24px; display:flex; align-items:center; gap:16px;
+  box-shadow:0 2px 12px rgba(0,0,0,.2);
+}
+.header h1 { font-size:20px; font-weight:600; letter-spacing:1px; }
+.header .nav { display:flex; gap:6px; margin-left:auto; }
+.header .nav a { color:#e8d5b0; text-decoration:none; padding:6px 14px; border-radius:6px; font-size:14px; transition:.2s; }
+.header .nav a:hover, .header .nav a.active { background:rgba(255,255,255,.15); color:#fff; }
+.container { max-width:1200px; margin:0 auto; padding:20px; }
+
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+.stat-card { background:var(--card); border-radius:12px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.stat-card .n { font-size:32px; font-weight:700; color:var(--primary); }
+.stat-card .l { font-size:13px; color:var(--muted); margin-top:4px; }
+
+.tabs { display:flex; gap:4px; margin-bottom:20px; background:var(--card); border-radius:10px; padding:4px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.tab { flex:1; text-align:center; padding:10px; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; transition:.2s; color:var(--muted); }
+.tab.active { background:var(--primary); color:#fff; }
+.tab:hover:not(.active) { background:var(--hover); }
+
+.panel { display:none; }
+.panel.active { display:block; }
+
+.card { background:var(--card); border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.06); margin-bottom:16px; }
+
+.filters { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
+.filters select, .filters input, .form-input {
+  padding:8px 12px; border:2px solid var(--border); border-radius:8px; font-size:14px; outline:none; background:var(--card);
+}
+.filters select:focus, .filters input:focus, .form-input:focus { border-color:var(--primary); }
+.btn {
+  padding:8px 16px; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; transition:.2s;
+}
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:#6b3f1a; }
+.btn-primary:disabled { background:#c4b49a; cursor:not-allowed; }
+.btn-outline { background:var(--card); color:var(--primary); border:2px solid var(--primary); }
+.btn-outline:hover { background:var(--hover); }
+.btn-sm { padding:4px 12px; font-size:12px; border-radius:6px; }
+.btn-view { background:var(--primary); color:#fff; }
+.btn-view:hover { background:#6b3f1a; }
+.btn-del { background:#f8d7da; color:#721c24; }
+.btn-del:hover { background:#f1c0c2; }
+
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th { text-align:left; padding:10px 12px; border-bottom:2px solid var(--border); color:#5c3d2e; font-weight:600; }
+th.sortable { cursor:pointer; user-select:none; }
+th.sortable:hover { color:var(--primary); }
+th.sortable span { font-size:10px; margin-left:2px; }
+td { padding:10px 12px; border-bottom:1px solid #f0e8d8; }
+tr:hover td { background:var(--hover); }
+.badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.bg-beginner { background:#f0e2cc; color:var(--primary); }
+.bg-intermediate { background:#fff3cd; color:#856404; }
+.bg-advanced { background:#f8d7da; color:#721c24; }
+.bg-active { background:#d4edda; color:#155724; }
+.bg-completed { background:#d1ecf1; color:#0c5460; }
+
+.form-row { margin-bottom:12px; }
+.form-row label { display:block; margin-bottom:4px; font-size:13px; color:var(--muted); }
+.form-row input, .form-row textarea, .form-row select {
+  width:100%; padding:8px 12px; border:2px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; outline:none;
+}
+.form-row textarea { min-height:80px; resize:vertical; }
+
+/* 弹窗 */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:100; align-items:center; justify-content:center; }
+.modal-overlay.show { display:flex; }
+.modal {
+  background:var(--card); border-radius:16px; width:90%; max-width:750px; max-height:85vh;
+  overflow-y:auto; padding:24px; box-shadow:0 8px 32px rgba(0,0,0,.2);
+}
+.modal h3 { color:#5c3d2e; margin-bottom:14px; font-size:18px; }
+.chat-replay { background:#faf7f0; border-radius:10px; padding:14px; max-height:400px; overflow-y:auto; }
+.chat-replay .rpl { margin-bottom:10px; padding:8px 12px; border-radius:8px; line-height:1.5; font-size:14px; }
+.chat-replay .rpl-student { background:var(--primary); color:#fff; margin-left:30px; }
+.chat-replay .rpl-agent { background:var(--card); border:1px solid var(--border); margin-right:30px; }
+.chat-replay .rpl-system { text-align:center; color:var(--muted); font-size:12px; }
+
+.upload-zone {
+  border:2px dashed #d4c4a8; border-radius:12px; padding:40px; text-align:center;
+  cursor:pointer; transition:.2s; margin-bottom:16px;
+}
+.upload-zone:hover { border-color:var(--primary); background:var(--hover); }
+.upload-zone .icon { font-size:40px; margin-bottom:8px; }
+
+.toast {
+  position:fixed; bottom:20px; right:20px; padding:12px 20px; border-radius:10px;
+  color:#fff; font-weight:600; z-index:200; animation:fadeIn .3s;
+}
+.toast.success { background:#5a8a3c; }
+.toast.error { background:#c0392b; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
+.pager { display:flex; align-items:center; gap:10px; justify-content:flex-end; padding:12px 4px 2px; font-size:13px; color:#8a7a6a; }
+.pg-btn { border:1px solid #e2d9cc; background:#fff; color:#3d2b1f; border-radius:6px; padding:5px 12px; font-size:13px; cursor:pointer; }
+.pg-btn:hover:not(:disabled) { border-color:#8b5a2b; color:#8b5a2b; }
+.pg-btn:disabled { opacity:.4; cursor:not-allowed; }
+.pg-info { margin:0 4px; }
+</style>
+<link rel="stylesheet" href="/static/jingui-theme.css?v=20260805">
+<script src="/static/jingui-motion.js?v=20260805" defer></script>
+</head>
+<body class="theme-admin">
+
+<div class="header">
+  <a class="brand-home" href="/newcase" aria-label="返回金匮要略首页"><h1>教师管理端</h1></a>
+  <div class="nav">
+    <a href="/" class="active">管理端</a>
+    <a href="/newcase">首页</a>
+    <a href="/train?ui=20260804-2">开始训练</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="console-intro">
+    <div>TEACHING OPERATIONS · 金匮教研</div>
+    <h2>教学运行总览</h2>
+    <p>在同一工作台中查看训练轨迹、维护病案与条文，并完成导入审核。</p>
+  </div>
+  <div class="stats">
+    <div class="stat-card"><div class="n" id="sTotal">0</div><div class="l">总训练次数</div></div>
+    <div class="stat-card"><div class="n" id="sActive">0</div><div class="l">进行中</div></div>
+    <div class="stat-card"><div class="n" id="sDone">0</div><div class="l">已完成</div></div>
+    <div class="stat-card"><div class="n" id="sAvg">--</div><div class="l">平均评分</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('train')">训练记录</div>
+    <div class="tab" onclick="switchTab('cases')">病案管理</div>
+    <div class="tab" onclick="switchTab('texts')">条文管理</div>
+    <div class="tab" onclick="switchTab('upload')">文档上传</div>
+    <div class="tab" onclick="switchTab('import')">导入审核</div>
+    <div class="tab" onclick="switchTab('feedback')">用户反馈</div>
+  </div>
+
+  <!-- 训练记录 -->
+  <div class="panel active" id="pTrain">
+    <div class="card">
+      <div class="filters">
+        <select id="fDiff" onchange="onFilter('train')"><option value="">全部难度</option><option value="初级">初级</option><option value="中级">中级</option><option value="高级">高级</option></select>
+        <select id="fStatus" onchange="onFilter('train')"><option value="">全部状态</option><option value="active">训练中</option><option value="completed">已完成</option></select>
+        <button class="btn btn-primary" onclick="onFilter('train')">刷新</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>学生</th><th>难度</th><th>病案</th><th>状态</th><th>轮数</th><th>评分</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="trainTbody"><tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
+      <div class="pager" id="pagerTrain"></div>
+    </div>
+  </div>
+
+  <!-- 病案管理 -->
+  <div class="panel" id="pCases">
+    <div class="card">
+      <h3 style="margin-bottom:12px;">新增病案</h3>
+      <div class="form-row"><label>标题</label><input id="cTitle" class="form-input"></div>
+      <div class="form-row"><label>病案内容</label><textarea id="cContent" class="form-input" rows="4"></textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-row"><label>诊断</label><input id="cDiag" class="form-input"></div>
+        <div class="form-row"><label>方剂</label><input id="cPresc" class="form-input"></div>
+        <div class="form-row"><label>难度</label><select id="cDiff" class="form-input"><option value="初级">初级</option><option value="中级">中级</option><option value="高级">高级</option></select></div>
+        <div class="form-row"><label>教学要点</label><input id="cTeach" class="form-input"></div>
+      </div>
+      <button class="btn btn-primary" onclick="createCase()">保存病案</button>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <select id="cfDiff" onchange="onFilter('cases')"><option value="">全部难度</option><option value="初级">初级</option><option value="中级">中级</option><option value="高级">高级</option></select>
+        <button class="btn btn-primary" onclick="onFilter('cases')">刷新</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>标题</th><th>难度</th><th>诊断</th><th>方剂</th><th>操作</th></tr></thead>
+      <tbody id="caseTbody"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
+      <div class="pager" id="pagerCases"></div>
+    </div>
+  </div>
+
+  <!-- 条文管理 -->
+  <div class="panel" id="pTexts">
+    <div class="card">
+      <h3 style="margin-bottom:12px;">新增条文</h3>
+      <div class="form-row"><label>来源经典</label><input id="tSource" class="form-input" placeholder="如《伤寒论》《金匮要略》"></div>
+      <div class="form-row"><label>章节（可选）</label><input id="tChapter" class="form-input" placeholder="如 辨太阳病脉证并治"></div>
+      <div class="form-row"><label>条文内容</label><textarea id="tContent" class="form-input" rows="3" placeholder="输入条文全文"></textarea></div>
+      <div class="form-row"><label>关键词（逗号分隔，可选）</label><input id="tKeywords" class="form-input" placeholder="如 太阳,中风,桂枝"></div>
+      <button class="btn btn-primary" onclick="createText()">保存条文</button>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <select id="tfSource" onchange="onFilter('texts')"><option value="">全部经典</option><option value="《伤寒论》">《伤寒论》</option><option value="《金匮要略》">《金匮要略》</option></select>
+        <button class="btn btn-primary" onclick="onFilter('texts')">刷新</button>
+        <button class="btn btn-del" onclick="batchDeleteTexts()" style="margin-left:auto;">批量删除选中</button>
+      </div>
+      <table><thead><tr><th><input type="checkbox" onclick="toggleAllTexts(this)" title="全选"></th><th class="sortable" onclick="sortTexts('id')">ID <span id="sIconId"></span></th><th class="sortable" onclick="sortTexts('source_book')">来源 <span id="sIconSource"></span></th><th class="sortable" onclick="sortTexts('chapter')">章节 <span id="sIconChapter"></span></th><th class="sortable" onclick="sortTexts('article_number')">条号 <span id="sIconNum"></span></th><th>条文内容</th><th>关键词</th><th>操作</th></tr></thead>
+      <tbody id="textTbody"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
+      <div class="pager" id="pagerTexts"></div>
+    </div>
+  </div>
+
+  <!-- 文档上传 -->
+  <div class="panel" id="pUpload">
+    <div class="card">
+      <div class="upload-zone" onclick="document.getElementById('fileInp').click()">
+        <div class="icon" aria-hidden="true">文</div><p style="font-size:15px;">点击上传文档</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:4px;">PDF / Word / Excel / TXT，自动解析条文和病案</p>
+      </div>
+      <input type="file" id="fileInp" style="display:none" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt" onchange="uploadFile(this)">
+      <div id="docList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px;">手动录入条文</h3>
+      <div class="form-row"><label>来源经典</label><input id="txtSource" class="form-input" placeholder="如《伤寒论》《金匮要略》"></div>
+      <div class="form-row"><label>章节（可选）</label><input id="txtChapter" class="form-input" placeholder="如 辨太阳病脉证并治"></div>
+      <div class="form-row"><label>条文内容</label><textarea id="txtContent" class="form-input" rows="3" placeholder="输入条文全文"></textarea></div>
+      <div class="form-row"><label>关键词（逗号分隔，可选）</label><input id="txtKeywords" class="form-input" placeholder="如 太阳,中风,桂枝"></div>
+      <button class="btn btn-primary" onclick="addText()">录入条文</button>
+    </div>
+  </div>
+
+  <!-- 导入审核 -->
+  <div class="panel" id="pImport">
+    <div class="card">
+      <h3 style="margin-bottom:12px;">导入批次</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">文档上传后自动解析并暂存于此，审核通过后发布到正式条文库。</p>
+      <div class="filters">
+        <button class="btn btn-primary" onclick="loadBatches()">刷新</button>
+      </div>
+      <table><thead><tr><th>批次</th><th>来源文件</th><th>解析条数</th><th>唯一条号</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="batchTbody"><tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
+    </div>
+
+    <!-- 批次详情（展开后显示） -->
+    <div class="card" id="batchDetail" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 id="bdTitle">批次详情</h3>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="newStaging()">新增条文</button>
+          <button class="btn btn-primary btn-sm" onclick="approveAllBatch()">全部批准</button>
+          <button class="btn btn-primary btn-sm" onclick="publishBatch()">发布到条文库</button>
+          <button class="btn btn-del btn-sm" onclick="rejectBatch()">驳回批次</button>
+          <button class="btn btn-outline btn-sm" onclick="closeBatchDetail()">关闭</button>
+        </div>
+      </div>
+      <div id="bdReport" style="margin-bottom:12px;padding:12px;background:#faf7f0;border-radius:8px;font-size:13px;"></div>
+      <table><thead><tr><th>条号</th><th>章节</th><th>正文预览</th><th>版式标记</th><th>状态</th><th>问题</th><th>操作</th></tr></thead>
+      <tbody id="stagingTbody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- 用户反馈 -->
+  <div class="panel" id="pFeedback">
+    <div class="card">
+      <div class="filters">
+        <select id="ffCategory" onchange="loadFeedbacks()"><option value="">全部类别</option><option value="功能建议">功能建议</option><option value="bug反馈">bug反馈</option><option value="使用体验">使用体验</option><option value="其他">其他</option></select>
+        <select id="ffStatus" onchange="loadFeedbacks()"><option value="">全部状态</option><option value="pending">待处理</option><option value="resolved">已处理</option><option value="closed">已关闭</option></select>
+        <button class="btn btn-primary" onclick="loadFeedbacks()">刷新</button>
+      </div>
+      <table><thead><tr><th>ID</th><th>类别</th><th>内容</th><th>联系方式</th><th>关联会话</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="fbTbody"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- 会话详情弹窗 -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal">
+    <h3>训练详情回放</h3>
+    <div id="dInfo" style="margin-bottom:14px;font-size:14px;color:var(--muted);"></div>
+    <div class="chat-replay" id="dChat"></div>
+    <div style="margin-top:16px;text-align:right;">
+      <button class="btn btn-primary btn-sm" onclick="document.getElementById('detailModal').classList.remove('show')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑病案弹窗 -->
+<div class="modal-overlay" id="caseEditModal">
+  <div class="modal">
+    <h3>编辑病案</h3>
+    <div class="form-row"><label>标题</label><input id="ceTitle" class="form-input"></div>
+    <div class="form-row"><label>病案内容</label><textarea id="ceContent" class="form-input" rows="5"></textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-row"><label>诊断</label><input id="ceDiag" class="form-input"></div>
+      <div class="form-row"><label>方剂</label><input id="cePresc" class="form-input"></div>
+      <div class="form-row"><label>难度</label><select id="ceDiff" class="form-input"><option value="初级">初级</option><option value="中级">中级</option><option value="高级">高级</option></select></div>
+      <div class="form-row"><label>教学要点</label><input id="ceTeach" class="form-input"></div>
+    </div>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-del btn-sm" onclick="document.getElementById('caseEditModal').classList.remove('show')">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="saveCaseEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑条文弹窗 -->
+<div class="modal-overlay" id="textEditModal">
+  <div class="modal">
+    <h3>编辑条文</h3>
+    <div class="form-row"><label>来源经典</label><input id="teSource" class="form-input"></div>
+    <div class="form-row"><label>章节</label><input id="teChapter" class="form-input"></div>
+    <div class="form-row"><label>条文内容</label><textarea id="teContent" class="form-input" rows="4"></textarea></div>
+    <div class="form-row"><label>关键词</label><input id="teKeywords" class="form-input"></div>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-del btn-sm" onclick="document.getElementById('textEditModal').classList.remove('show')">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="saveTextEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑暂存条文弹窗 -->
+<div class="modal-overlay" id="stagingEditModal">
+  <div class="modal">
+    <h3>编辑暂存条文</h3>
+    <div class="form-row"><label>条号</label><input id="seNumber" class="form-input" type="number"></div>
+    <div class="form-row"><label>篇章</label><input id="seChapter" class="form-input"></div>
+    <div class="form-row"><label>规范正文（展示用）</label><textarea id="seContent" class="form-input" rows="5"></textarea></div>
+    <div class="form-row"><label>原始文本（追溯用）</label><textarea id="seRaw" class="form-input" rows="3"></textarea></div>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-del btn-sm" onclick="document.getElementById('stagingEditModal').classList.remove('show')">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="saveStagingEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api'; let editingCaseId = null, editingTextId = null;
+
+// Tab
+// ===== 分页（P2-3）=====
+// 列表接口通过 X-Total-Count 响应头返回总数，响应体仍是数组
+const PAGER = {
+  train: { skip:0, total:0, size:20, unit:'条记录', el:'pagerTrain', load:()=>loadTrain() },
+  cases: { skip:0, total:0, size:20, unit:'个病案', el:'pagerCases', load:()=>loadCases() },
+  texts: { skip:0, total:0, size:50, unit:'条条文', el:'pagerTexts', load:()=>loadTexts() },
+};
+
+async function fetchPaged(url, key) {
+  const p = PAGER[key];
+  const sep = url.includes('?') ? '&' : '?';
+  const resp = await fetch(`${url}${sep}skip=${p.skip}&limit=${p.size}`);
+  if (!resp.ok) throw new Error('加载失败');
+  p.total = Number(resp.headers.get('X-Total-Count') || 0);
+  return resp.json();
+}
+
+function renderPager(key) {
+  const p = PAGER[key];
+  const el = document.getElementById(p.el);
+  if (!el) return;
+  const pages = Math.max(1, Math.ceil(p.total / p.size));
+  const cur = Math.floor(p.skip / p.size) + 1;
+  el.innerHTML =
+    `<button class="pg-btn" ${cur<=1?'disabled':''} onclick="gotoPage('${key}',-1)">上一页</button>` +
+    `<span class="pg-info">第 ${cur} / ${pages} 页 · 共 ${p.total} ${p.unit}</span>` +
+    `<button class="pg-btn" ${cur>=pages?'disabled':''} onclick="gotoPage('${key}',1)">下一页</button>`;
+}
+
+function gotoPage(key, delta) {
+  const p = PAGER[key];
+  const next = p.skip + delta * p.size;
+  if (next < 0 || (p.total > 0 && next >= p.total)) return;
+  p.skip = next;
+  p.load();
+}
+
+function resetPage(key) { PAGER[key].skip = 0; }
+
+function onFilter(key) { resetPage(key); PAGER[key].load(); }
+
+
+function switchTab(n) {
+  const map = { train:'训练记录', cases:'病案管理', texts:'条文管理', upload:'文档上传', import:'导入审核', feedback:'用户反馈' };
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.includes(map[n])));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('p'+n.charAt(0).toUpperCase()+n.slice(1)).classList.add('active');
+  if (n==='train') loadTrain();
+  if (n==='cases') loadCases();
+  if (n==='texts') loadTexts();
+  if (n==='upload') loadDocs();
+  if (n==='import') loadBatches();
+  if (n==='feedback') loadFeedbacks();
+}
+
+// === 训练记录 ===
+async function loadTrain() {
+  const d = document.getElementById('fDiff').value, s = document.getElementById('fStatus').value;
+  let url = `${API}/agent/sessions`;
+  const params = [];
+  if (d) params.push(`difficulty_level=${encodeURIComponent(d)}`);
+  if (s) params.push(`status=${encodeURIComponent(s)}`);
+  if (params.length) url += '?' + params.join('&');
+  try {
+    const data = await fetchPaged(url, 'train');
+    const tbody = document.getElementById('trainTbody');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px;">暂无训练记录</td></tr>'; }
+    else {
+      tbody.innerHTML = data.map(r => {
+        const diff = ['初级','中级','高级'].includes(r.difficulty_level) ? r.difficulty_level : '初级';
+        const diffCls = diff==='初级'?'beginner':diff==='中级'?'intermediate':'advanced';
+        const st = ['active','completed','abandoned'].includes(r.status) ? r.status : 'active';
+        const sid = Number(r.id);
+        return `
+        <tr>
+          <td>${sid}</td><td>${escHtml(String(r.student_id||'--'))}</td>
+          <td><span class="badge bg-${diffCls}">${diff}</span></td>
+          <td>${escHtml(String(r.case_title||'--').substring(0,20))}</td>
+          <td><span class="badge bg-${st}">${st==='active'?'训练中':'已完成'}</span></td>
+          <td>${Number(r.message_count)||0}</td><td>${escHtml(String(r.score||'--'))}</td>
+          <td>${escHtml(String(r.started_at||'').substring(0,10))}</td>
+          <td><button class="btn btn-view btn-sm" onclick="viewSession(${sid})">查看</button> <button class="btn btn-del btn-sm" onclick="delSession(${sid})">删除</button></td>
+        </tr>`;
+      }).join('');
+    }
+    renderPager('train');
+    loadTrainSummary();
+  } catch(e) { document.getElementById('trainTbody').innerHTML = '<tr><td colspan="9" style="text-align:center;color:#c0392b;padding:30px;">加载失败</td></tr>'; }
+}
+
+// 四个统计卡由后端聚合，避免分页后只统计当前页
+async function loadTrainSummary() {
+  try {
+    const resp = await fetch(`${API}/agent/session-summary`);
+    if (!resp.ok) return;
+    const s = await resp.json();
+    document.getElementById('sTotal').textContent = s.total ?? 0;
+    document.getElementById('sActive').textContent = s.active ?? 0;
+    document.getElementById('sDone').textContent = s.completed ?? 0;
+    document.getElementById('sAvg').textContent = s.average_score == null ? '--' : Math.round(s.average_score) + '分';
+  } catch(e) { /* 汇总失败不影响列表展示 */ }
+}
+
+async function viewSession(id) {
+  const data = await (await fetch(`${API}/agent/session/${id}`)).json();
+  document.getElementById('dInfo').textContent = `学生：${data.student_id||'--'} | 难度：${data.difficulty_level||'--'} | 病案：${data.case_title||'--'} | 评分：${data.score||'--'}`;
+  document.getElementById('dChat').innerHTML = (data.messages||[]).map(m => {
+    const roleCls = m.role==='student' ? 'student' : (m.role==='agent' ? 'agent' : 'system');
+    const typeTag = (m.role==='agent' && m.message_type)
+      ? `<span class="badge bg-${m.message_type==='praise'?'active':m.message_type==='evaluation'?'completed':'intermediate'}" style="font-size:10px">${escHtml(String(m.message_type))}</span><br>`
+      : '';
+    return `<div class="rpl rpl-${roleCls}">${typeTag}${escHtml(String(m.content||''))}</div>`;
+  }).join('');
+  document.getElementById('detailModal').classList.add('show');
+}
+
+async function delSession(id) { if (!confirm('确定删除？')) return; await fetch(`${API}/agent/session/${id}`,{method:'DELETE'}); toast('已删除','success'); loadTrain(); }
+
+// === 病案管理 ===
+async function createCase() {
+  const data = {
+    title: document.getElementById('cTitle').value,
+    content: document.getElementById('cContent').value,
+    diagnosis: document.getElementById('cDiag').value,
+    prescription: document.getElementById('cPresc').value,
+    difficulty_level: document.getElementById('cDiff').value,
+    teaching_points: document.getElementById('cTeach').value
+  };
+  if (!data.title || !data.content) { toast('标题和内容不能为空','error'); return; }
+  try {
+    await fetch(`${API}/cases/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    toast('保存成功','success');
+    ['cTitle','cContent','cDiag','cPresc','cTeach'].forEach(id => document.getElementById(id).value='');
+    loadCases();
+  } catch(e) { toast('保存失败: '+e.message,'error'); }
+}
+
+async function loadCases() {
+  const diff = document.getElementById('cfDiff').value;
+  let url = `${API}/cases/admin/`;
+  if (diff) url += `?difficulty_level=${encodeURIComponent(diff)}`;
+  try {
+    const data = await fetchPaged(url, 'cases');
+    const tbody = document.getElementById('caseTbody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">暂无病案</td></tr>';
+    } else {
+      tbody.innerHTML = data.map(c => `
+        <tr><td>${Number(c.id)}</td><td>${escapeHtml(String(c.title||'').substring(0,25))}</td>
+        <td><span class="badge bg-${c.difficulty_level==='初级'?'beginner':c.difficulty_level==='中级'?'intermediate':'advanced'}">${escapeHtml(String(c.difficulty_level||'初级'))}</span></td>
+        <td>${escapeHtml(String(c.diagnosis||'--').substring(0,20))}</td><td>${escapeHtml(String(c.prescription||'--').substring(0,20))}</td>
+        <td><button class="btn btn-view btn-sm" onclick="editCase(${Number(c.id)})">编辑</button></td></tr>`).join('');
+    }
+    renderPager('cases');
+  } catch(e) { document.getElementById('caseTbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#c0392b;padding:30px;">加载失败</td></tr>'; }
+}
+
+async function editCase(id) {
+  const c = await (await fetch(`${API}/cases/admin/${id}`)).json();
+  editingCaseId = id;
+  document.getElementById('ceTitle').value = c.title||'';
+  document.getElementById('ceContent').value = c.content||'';
+  document.getElementById('ceDiag').value = c.diagnosis||'';
+  document.getElementById('cePresc').value = c.prescription||'';
+  document.getElementById('ceDiff').value = c.difficulty_level||'初级';
+  document.getElementById('ceTeach').value = c.teaching_points||'';
+  document.getElementById('caseEditModal').classList.add('show');
+}
+
+async function saveCaseEdit() {
+  if (!editingCaseId) return;
+  const data = {
+    title: document.getElementById('ceTitle').value,
+    content: document.getElementById('ceContent').value,
+    diagnosis: document.getElementById('ceDiag').value,
+    prescription: document.getElementById('cePresc').value,
+    difficulty_level: document.getElementById('ceDiff').value,
+    teaching_points: document.getElementById('ceTeach').value
+  };
+  try {
+    await fetch(`${API}/cases/${editingCaseId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    document.getElementById('caseEditModal').classList.remove('show');
+    toast('保存成功','success'); loadCases();
+  } catch(e) { toast('保存失败: '+e.message,'error'); }
+}
+
+// === 手动录入条文 ===
+async function addText() {
+  const source = document.getElementById('txtSource').value.trim();
+  const content = document.getElementById('txtContent').value.trim();
+  if (!source || !content) { toast('来源经典和条文内容不能为空','error'); return; }
+  const data = {
+    source_book: source,
+    chapter: document.getElementById('txtChapter').value.trim() || null,
+    content: content,
+    keywords: document.getElementById('txtKeywords').value.trim() || null
+  };
+  try {
+    await fetch(`${API}/texts/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    toast('条文录入成功','success');
+    document.getElementById('txtSource').value = '';
+    document.getElementById('txtChapter').value = '';
+    document.getElementById('txtContent').value = '';
+    document.getElementById('txtKeywords').value = '';
+  } catch(e) { toast('录入失败: '+e.message,'error'); }
+}
+
+// === 条文管理（表格CRUD） ===
+async function createText() {
+  const source = document.getElementById('tSource').value.trim();
+  const content = document.getElementById('tContent').value.trim();
+  if (!source || !content) { toast('来源和内容不能为空','error'); return; }
+  try {
+    await fetch(`${API}/texts/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      source_book: source,
+      chapter: document.getElementById('tChapter').value.trim() || null,
+      content: content,
+      keywords: document.getElementById('tKeywords').value.trim() || null
+    })});
+    toast('保存成功','success');
+    ['tSource','tChapter','tContent','tKeywords'].forEach(id => document.getElementById(id).value='');
+    loadTexts();
+  } catch(e) { toast('保存失败: '+e.message,'error'); }
+}
+
+let textSortField = 'id';
+let textSortAsc = true;
+
+function renderTexts(data) {
+  const tbody = document.getElementById('textTbody');
+  if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">暂无条文</td></tr>'; return; }
+  tbody.innerHTML = data.map(t => `
+    <tr>
+      <td><input type="checkbox" class="text-cb" value="${t.id}"></td>
+      <td>${t.id}</td><td>${escapeHtml(t.source_book||'--')}</td>
+      <td>${escapeHtml((t.chapter||'').substring(0,20))}</td>
+      <td>${t.article_number||''}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((t.content||'').substring(0,80))}</td>
+      <td>${escapeHtml((t.keywords||'').substring(0,20))}</td>
+      <td>
+        <button class="btn btn-view btn-sm" onclick="editText(${t.id})">编辑</button>
+        <button class="btn btn-del btn-sm" onclick="deleteText(${t.id})">删除</button>
+      </td>
+    </tr>`).join('');
+}
+
+function sortTexts(field) {
+  if (textSortField === field) {
+    textSortAsc = !textSortAsc;
+  } else {
+    textSortField = field;
+    textSortAsc = true;
+  }
+  ['Id','Source','Chapter','Num'].forEach(k => {
+    document.getElementById('sIcon'+k).textContent = '';
+  });
+  const iconMap = {id:'Id',source_book:'Source',chapter:'Chapter',article_number:'Num'};
+  const iconEl = document.getElementById('sIcon' + iconMap[field]);
+  if (iconEl) iconEl.textContent = textSortAsc ? '▲' : '▼';
+  // 排序交给后端，并回到第一页，保证分页结果正确
+  resetPage('texts');
+  loadTexts();
+}
+
+let textDataCache = [];
+async function loadTexts() {
+  const src = document.getElementById('tfSource').value;
+  let url = `${API}/texts/?sort_by=${encodeURIComponent(textSortField)}&sort_order=${textSortAsc?'asc':'desc'}`;
+  if (src) url += `&source_book=${encodeURIComponent(src)}`;
+  try {
+    const data = await fetchPaged(url, 'texts');
+    textDataCache = data;
+    renderTexts(data);
+    renderPager('texts');
+  } catch(e) { document.getElementById('textTbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#c0392b;padding:30px;">加载失败</td></tr>'; }
+}
+
+async function editText(id) {
+  const t = await (await fetch(`${API}/texts/${id}`)).json();
+  editingTextId = id;
+  document.getElementById('teSource').value = t.source_book||'';
+  document.getElementById('teChapter').value = t.chapter||'';
+  document.getElementById('teContent').value = t.content||'';
+  document.getElementById('teKeywords').value = t.keywords||'';
+  document.getElementById('textEditModal').classList.add('show');
+}
+
+async function saveTextEdit() {
+  if (!editingTextId) return;
+  try {
+    await fetch(`${API}/texts/${editingTextId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      source_book: document.getElementById('teSource').value,
+      chapter: document.getElementById('teChapter').value,
+      content: document.getElementById('teContent').value,
+      keywords: document.getElementById('teKeywords').value
+    })});
+    document.getElementById('textEditModal').classList.remove('show');
+    toast('保存成功','success'); loadTexts();
+  } catch(e) { toast('保存失败: '+e.message,'error'); }
+}
+
+async function deleteText(id) {
+  if (!confirm('确定删除此条文？')) return;
+  await fetch(`${API}/texts/${id}`,{method:'DELETE'});
+  toast('已删除','success'); loadTexts();
+}
+
+async function batchDeleteTexts() {
+  const ids = [...document.querySelectorAll('.text-cb:checked')].map(cb => cb.value);
+  if (!ids.length) { toast('请先勾选条文','error'); return; }
+  if (!confirm(`确定删除 ${ids.length} 条条文？`)) return;
+  await fetch(`${API}/texts/batch-delete`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids: ids.map(Number)})});
+  toast(`已删除 ${ids.length} 条`,'success'); loadTexts();
+}
+
+function toggleAllTexts(cb) {
+  document.querySelectorAll('.text-cb').forEach(c => c.checked = cb.checked);
+}
+
+function escHtml(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML};
+
+// === 文档上传 ===
+async function uploadFile(inp) {
+  const f = inp.files[0]; if (!f) return;
+  const normalLimit = 20 * 1024 * 1024;
+  const fd = new FormData(); fd.append('file', f);
+  const opts = { method: 'POST', body: fd };
+  if (f.size > normalLimit) {
+    const password = prompt(`文件大小为 ${(f.size/1024/1024).toFixed(1)}MB，超过20MB，请输入上传密码：`);
+    if (password === null) { inp.value = ''; return; }
+    const h = new Headers();
+    h.set('X-Upload-Password', password);
+    opts.headers = h;
+  }
+  try {
+    const resp = await fetch(`${API}/documents/upload`, opts);
+    let result = {};
+    try { result = await resp.json(); } catch (_) {}
+    if (!resp.ok) throw new Error(result.detail || `上传失败（HTTP ${resp.status}）`);
+    toast(result.message||'上传成功', result.success===false?'error':'success');
+    loadDocs();
+  } catch(e) {
+    toast(e.message||'上传失败','error');
+  } finally {
+    inp.value = '';
+  }
+}
+
+async function loadDocs() {
+  try {
+    const data = await (await fetch(`${API}/documents/?limit=50`)).json();
+    document.getElementById('docList').innerHTML = data.length ? data.map(d =>
+      `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--hover);border-radius:8px;font-size:13px;">
+        <span title="${escapeHtml(d.error_message || '')}">${escapeHtml(d.filename)} <span style="color:var(--muted);font-size:11px;">(${d.status})</span>${d.error_message ? ' <span style="color:#d9534f;font-size:11px;">解析失败：' + escapeHtml(d.error_message) + '</span>' : ''}</span>
+        <span style="display:flex;align-items:center;gap:8px;"><span style="color:var(--muted);font-size:11px;">${(d.upload_date||'').substring(0,10)}</span>
+        ${d.status === 'failed' ? `<button class="btn" style="padding:4px 8px;font-size:11px;" onclick="retryDocument(${d.id})">重试</button>` : ''}
+        <button class="btn btn-del" style="padding:4px 8px;font-size:11px;" onclick="deleteDocument(${d.id})">删除</button></span>
+      </div>`).join('') : '<div style="text-align:center;color:var(--muted);padding:20px;">暂无文档</div>';
+  } catch(e) {}
+}
+
+async function retryDocument(id) {
+  try {
+    const resp = await fetch(`${API}/documents/${id}/retry`, {method:'POST'});
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.detail || `重试失败（HTTP ${resp.status}）`);
+    toast(result.message || '已开始重试解析', 'success');
+    loadDocs();
+  } catch(e) {
+    toast(e.message || '重试失败', 'error');
+  }
+}
+
+// === 工具 ===
+function toast(msg, type) {
+  const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2500);
+}
+function escapeHtml(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function deleteDocument(id) {
+  if (!confirm('确定删除此文档及其关联的暂存批次？')) return;
+  try {
+    const r = await (await fetch(`${API}/documents/${id}`, {method:'DELETE'})).json();
+    toast(r.message || '已删除', 'success');
+    loadDocs();
+    loadBatches();
+  } catch(e) { toast('删除失败: '+e.message, 'error'); }
+}
+
+// === 导入审核 ===
+let currentBatchId = '';
+let stagingCache = {};
+
+async function loadBatches() {
+  try {
+    const data = await (await fetch(`${API}/import/batches`)).json();
+    if (!Array.isArray(data)) { document.getElementById('batchTbody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">无导入批次</td></tr>'; return; }
+    let h = '';
+    data.forEach(b => {
+      const st = b.status === 'published' ? 'bg-completed' : b.status === 'rejected' ? 'bg-advanced' : 'bg-intermediate';
+      const stLabel = {pending:'待审核',needs_review:'需审核',published:'已发布',rejected:'已驳回'}[b.status] || b.status;
+      h += `<tr>
+        <td><code>${b.batch_id}</code></td>
+        <td>${escapeHtml(b.source_file||'')}</td>
+        <td>${b.total_articles}</td>
+        <td>${b.unique_numbers}</td>
+        <td><span class="badge ${st}">${stLabel}</span></td>
+        <td>${(b.created_at||'').slice(0,16)}</td>
+        <td><button class="btn btn-view btn-sm" onclick="viewBatch('${b.batch_id}')">查看</button></td>
+      </tr>`;
+    });
+    document.getElementById('batchTbody').innerHTML = h || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">无导入批次</td></tr>';
+  } catch(e) { toast('加载批次失败: '+e.message, 'error'); }
+}
+
+async function viewBatch(batchId) {
+  currentBatchId = batchId;
+  try {
+    const [detail, texts] = await Promise.all([
+      fetch(`${API}/import/batches/${batchId}`).then(r=>r.json()),
+      fetch(`${API}/import/batches/${batchId}/texts?limit=1000`).then(r=>r.json())
+    ]);
+    document.getElementById('bdTitle').textContent = `批次 ${batchId} — ${detail.source_file||''}`;
+    const qr = detail.quality_report || {};
+    document.getElementById('bdReport').innerHTML = `
+      <b>质检报告</b><br>
+      唯一条号：${qr.actual_unique||'?'} / 预期：${qr.expected_count||'?'} &nbsp;|&nbsp;
+      缺失：${(qr.missing_numbers||[]).length ? qr.missing_numbers.slice(0,10).join(',') : '无'} &nbsp;|&nbsp;
+      重复：${Object.keys(qr.duplicates||{}).join(',')||'无'}<br>
+      问题：${(qr.issues||[]).join('；')||'无'}
+    `;
+    let h = '';
+    (texts.items||[]).forEach(t => {
+      const stCls = t.status==='approved'?'bg-active':t.status==='rejected'?'bg-advanced':'bg-beginner';
+      stagingCache[t.id] = t;
+      h += `<tr>
+        <td>${t.article_number||'?'}</td>
+        <td style="font-size:12px;">${escapeHtml((t.chapter||'').slice(0,20))}</td>
+        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.content||'').slice(0,50)}</td>
+        <td>${t.layout_marker||''}</td>
+        <td><span class="badge ${stCls}">${t.status}</span></td>
+        <td style="font-size:11px;color:var(--muted);">${t.issue||''}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-view btn-sm" onclick="editStaging(${t.id})">编辑</button>
+          <button class="btn btn-view btn-sm" onclick="approveOne(${t.id})" ${t.status==='approved'?'disabled':''}>批准</button>
+          <button class="btn btn-del btn-sm" onclick="rejectOne(${t.id})" ${t.status==='rejected'?'disabled':''}>驳回</button>
+          <button class="btn btn-del btn-sm" onclick="deleteStaging(${t.id})">删除</button>
+        </td>
+      </tr>`;
+    });
+    document.getElementById('stagingTbody').innerHTML = h || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px;">无暂存条文</td></tr>';
+    document.getElementById('batchDetail').style.display = 'block';
+    document.getElementById('batchDetail').scrollIntoView({behavior:'smooth'});
+  } catch(e) { toast('加载批次详情失败: '+e.message, 'error'); }
+}
+
+function closeBatchDetail() { document.getElementById('batchDetail').style.display = 'none'; currentBatchId = ''; }
+
+async function approveOne(id) {
+  try {
+    const r = await (await fetch(`${API}/import/batches/${currentBatchId}/approve/${id}`, {method:'POST'})).json();
+    toast(r.message||'已批准', 'success');
+    viewBatch(currentBatchId);
+  } catch(e) { toast('批准失败: '+e.message, 'error'); }
+}
+
+async function rejectOne(id) {
+  const reason = prompt('驳回原因（可选）：');
+  try {
+    const r = await (await fetch(`${API}/import/batches/${currentBatchId}/reject/${id}?reason=${encodeURIComponent(reason||'')}`, {method:'POST'})).json();
+    toast(r.message||'已驳回', 'success');
+    viewBatch(currentBatchId);
+  } catch(e) { toast('驳回失败: '+e.message, 'error'); }
+}
+
+async function deleteStaging(id) {
+  if (!confirm('确定删除此暂存条文？')) return;
+  try {
+    const r = await (await fetch(`${API}/import/batches/${currentBatchId}/texts/${id}`, {method:'DELETE'})).json();
+    toast(r.message||'已删除', 'success');
+    viewBatch(currentBatchId);
+  } catch(e) { toast('删除失败: '+e.message, 'error'); }
+}
+
+async function approveAllBatch() {
+  if (!confirm('确定批准本批次所有待审核条文？')) return;
+  try {
+    const r = await (await fetch(`${API}/import/batches/${currentBatchId}/approve-all`, {method:'POST'})).json();
+    toast(r.message, 'success');
+    viewBatch(currentBatchId);
+  } catch(e) { toast('批准失败: '+e.message, 'error'); }
+}
+
+async function publishBatch() {
+  if (!confirm('确定将已批准的条文发布到正式条文库？此操作不可撤销。')) return;
+  try {
+    const r = await (await fetch(`${API}/import/batches/${currentBatchId}/publish`, {method:'POST'})).json();
+    toast(r.message, 'success');
+    closeBatchDetail();
+    loadBatches();
+  } catch(e) { toast('发布失败: '+e.message, 'error'); }
+}
+
+async function rejectBatch() {
+  const reason = prompt('驳回原因（可选）：');
+  if (!confirm('确定驳回整个批次？未发布的条文将不会被导入。')) return;
+  try {
+    const r = await (await fetch(`${API}/import/batches/${currentBatchId}/reject-batch?reason=${encodeURIComponent(reason||'')}`, {method:'POST'})).json();
+    toast(r.message, 'success');
+    closeBatchDetail();
+    loadBatches();
+  } catch(e) { toast('驳回失败: '+e.message, 'error'); }
+}
+
+let editingStagingId = null;
+function editStaging(id) {
+  const t = stagingCache[id];
+  if (!t) return;
+  editingStagingId = id;
+  document.getElementById('seNumber').value = t.article_number || '';
+  document.getElementById('seChapter').value = t.chapter || '';
+  document.getElementById('seContent').value = t.content || '';
+  document.getElementById('seRaw').value = t.raw_content || '';
+  document.getElementById('stagingEditModal').classList.add('show');
+}
+
+async function saveStagingEdit() {
+  const id = editingStagingId;
+  const content = document.getElementById('seContent').value.trim();
+  const raw = document.getElementById('seRaw').value.trim();
+  const num = parseInt(document.getElementById('seNumber').value) || null;
+  const chapter = document.getElementById('seChapter').value.trim() || null;
+  try {
+    const params = new URLSearchParams();
+    if (content) params.set('content', content);
+    if (raw) params.set('raw_content', raw);
+    if (num) params.set('article_number', num);
+    if (chapter) params.set('chapter', chapter);
+    let url, method;
+    if (editingStagingId) {
+      url = `${API}/import/batches/${currentBatchId}/edit/${editingStagingId}?${params}`;
+      method = 'PUT';
+    } else {
+      url = `${API}/import/batches/${currentBatchId}/texts?${params}`;
+      method = 'POST';
+    }
+    const r = await (await fetch(url, {method})).json();
+    document.getElementById('stagingEditModal').classList.remove('show');
+    toast(r.message || '已保存', 'success');
+    editingStagingId = null;
+    viewBatch(currentBatchId);
+  } catch(e) { toast('保存失败: '+e.message, 'error'); }
+}
+
+function newStaging() {
+  editingStagingId = null;
+  document.getElementById('seNumber').value = '';
+  document.getElementById('seChapter').value = '';
+  document.getElementById('seContent').value = '';
+  document.getElementById('seRaw').value = '';
+  document.getElementById('stagingEditModal').classList.add('show');
+}
+
+// === 用户反馈管理 ===
+async function loadFeedbacks() {
+  const cat = document.getElementById('ffCategory').value;
+  const st = document.getElementById('ffStatus').value;
+  let url = `${API}/feedback/?limit=100`;
+  if (cat) url += `&category=${encodeURIComponent(cat)}`;
+  if (st) url += `&status=${st}`;
+
+  try {
+    const data = await (await fetch(url)).json();
+    const tbody = document.getElementById('fbTbody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">暂无反馈</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(fb => {
+      const stCls = fb.status === 'pending' ? 'bg-intermediate' : fb.status === 'resolved' ? 'bg-active' : 'bg-advanced';
+      const stLabel = { pending: '待处理', resolved: '已处理', closed: '已关闭' }[fb.status] || escapeHtml(String(fb.status||'--'));
+      const sessionInfo = fb.session_id ? `#${Number(fb.session_id)} ${escapeHtml(String(fb.session_difficulty||''))}` : '--';
+      const catCls = fb.category==='功能建议'?'active':fb.category==='bug反馈'?'advanced':'intermediate';
+      const catLabel = escapeHtml(String(fb.category||'--'));
+      return `<tr>
+        <td>${Number(fb.id)}</td>
+        <td><span class="badge bg-${catCls}">${catLabel}</span></td>
+        <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(fb.content)}">${escapeHtml(fb.content).substring(0,60)}</td>
+        <td>${escapeHtml(fb.contact||'--')}</td>
+        <td style="font-size:12px;">${sessionInfo}</td>
+        <td><span class="badge ${stCls}">${stLabel}</span></td>
+        <td style="font-size:12px;">${(fb.created_at||'').substring(0,10)}</td>
+        <td style="white-space:nowrap;">
+          ${fb.status==='pending' ? `<button class="btn btn-view btn-sm" onclick="resolveFeedback(${fb.id})">处理</button>` : ''}
+          <button class="btn btn-view btn-sm" onclick="closeFeedback_(${fb.id})">关闭</button>
+          <button class="btn btn-del btn-sm" onclick="deleteFeedback(${fb.id})">删除</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('fbTbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#c0392b;padding:30px;">加载失败</td></tr>';
+  }
+}
+
+async function resolveFeedback(id) {
+  const note = prompt('处理备注（可选）：');
+  await fetch(`${API}/feedback/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'resolved', admin_note: note || null })
+  });
+  toast('已标记为已处理', 'success');
+  loadFeedbacks();
+}
+
+async function closeFeedback_(id) {
+  const note = prompt('关闭备注（可选）：');
+  await fetch(`${API}/feedback/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'closed', admin_note: note || null })
+  });
+  toast('已关闭', 'success');
+  loadFeedbacks();
+}
+
+async function deleteFeedback(id) {
+  if (!confirm('确定删除此反馈？')) return;
+  await fetch(`${API}/feedback/${id}`, { method: 'DELETE' });
+  toast('已删除', 'success');
+  loadFeedbacks();
+}
+
+// 初始化
+loadTrain(); loadDocs();
+</script>
+</body>
+</html>

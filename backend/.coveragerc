@@ -1,0 +1,19 @@
+[run]
+source = app
+omit =
+    tests/*
+    seed_cases.py
+    seed_texts.py
+    app/__init__.py
+
+[report]
+# 待后续提升覆盖率的模块
+fail_under = 0
+
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+
+[html]
+directory = htmlcov

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>首页 - 《金匮要略》临床思辨训练</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background:#f5efe0; color:#3d2b1f; min-height:100vh;
+}
+.header {
+  background:linear-gradient(135deg, #5c3d2e 0%, #8b5a2b 100%);
+  color:#f5efe0; padding:10px 24px; display:flex; align-items:center; gap:16px;
+  box-shadow:0 2px 12px rgba(0,0,0,.2);
+}
+.header h1 { font-size:20px; font-weight:600; letter-spacing:1px; }
+.header .nav { display:flex; gap:6px; margin-left:auto; }
+.header .nav a { color:#e8d5b0; text-decoration:none; padding:6px 14px; border-radius:6px; font-size:14px; transition:.2s; }
+.header .nav a:hover, .header .nav a.active { background:rgba(255,255,255,.15); color:#fff; }
+.container { max-width:960px; margin:0 auto; padding:24px; }
+
+/* Hero */
+.hero {
+  background: linear-gradient(135deg, #fffaf2 0%, #fdf6ed 100%);
+  border-radius:16px; padding:40px; text-align:center; margin-bottom:24px;
+  box-shadow:0 2px 12px rgba(0,0,0,.06); border:1px solid #e8d5b0;
+}
+.hero h2 { font-size:28px; color:#5c3d2e; margin-bottom:12px; }
+.hero p { color:#8a7a6a; font-size:15px; line-height:1.7; max-width:600px; margin:0 auto 20px; }
+.hero-btn {
+  display:inline-block; padding:14px 40px; background:linear-gradient(135deg, #8b5a2b, #a0522d);
+  color:#fff; text-decoration:none; border-radius:12px; font-size:18px; font-weight:700;
+  transition:.2s; box-shadow:0 4px 16px rgba(139,90,43,.4);
+}
+.hero-btn:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(139,90,43,.5); }
+
+/* Cards */
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
+@media (max-width:640px) { .grid2 { grid-template-columns:1fr; } }
+.card {
+  background:#fff; border-radius:14px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,.06);
+  border:1px solid #e8d5b0; transition:.2s;
+}
+.card:hover { border-color:#8b5a2b; transform:translateY(-2px); }
+.card h3 { color:#5c3d2e; margin-bottom:8px; font-size:18px; }
+.card p { color:#8a7a6a; font-size:14px; line-height:1.6; margin-bottom:14px; }
+.card .btn {
+  display:inline-block; padding:10px 24px; background:#8b5a2b; color:#fff;
+  text-decoration:none; border-radius:8px; font-size:14px; font-weight:600; transition:.2s;
+}
+.card .btn:hover { background:#6b3f1a; }
+
+/* 快速浏览 */
+.quick-section { margin-bottom:24px; }
+.quick-section h3 { color:#5c3d2e; margin-bottom:12px; font-size:18px; }
+.quick-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+@media (max-width:768px) { .quick-grid { grid-template-columns:repeat(2,1fr); } }
+.quick-card {
+  background:#fff; border-radius:10px; padding:16px; text-align:center;
+  border:1px solid #e8d5b0; box-shadow:0 2px 6px rgba(0,0,0,.04);
+}
+.quick-card .num { font-size:28px; font-weight:700; color:#8b5a2b; }
+.quick-card .lbl { font-size:12px; color:#8a7a6a; margin-top:4px; }
+
+/* 搜索 */
+.search-bar { display:flex; gap:10px; margin-bottom:16px; }
+.search-bar input {
+  flex:1; padding:10px 14px; border:2px solid #e0d5c0; border-radius:10px;
+  font-size:14px; outline:none; font-family:inherit;
+}
+.search-bar input:focus { border-color:#8b5a2b; }
+.search-bar button {
+  padding:10px 20px; background:#8b5a2b; color:#fff; border:none; border-radius:10px;
+  cursor:pointer; font-size:14px; font-weight:600;
+}
+.search-bar button:hover { background:#6b3f1a; }
+
+.result-list { display:flex; flex-direction:column; gap:10px; }
+.result-item {
+  background:#fff; border:1px solid #e8d5b0; border-radius:10px; padding:14px;
+  font-size:14px; line-height:1.7;
+}
+.result-item .meta { color:#8a7a6a; font-size:12px; margin-bottom:4px; }
+.result-item .source { color:#8b5a2b; font-weight:600; }
+</style>
+<link rel="stylesheet" href="/static/jingui-theme.css?v=20260805">
+<script src="/static/jingui-motion.js?v=20260805" defer></script>
+</head>
+<body class="theme-user">
+
+<div class="header">
+  <a class="brand-home" href="/newcase" aria-label="返回金匮要略首页"><h1>《金匮要略》临床思辨训练系统</h1></a>
+  <div class="nav">
+    <a href="/">管理端</a>
+    <a href="/newcase">首页</a>
+    <a href="/portal" class="active">功能门户</a>
+    <a href="/train?ui=20260804-2">开始训练</a>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-copy">
+      <h2>临床思辨 · 从经典到临床</h2>
+      <p>运用"病脉证并治"思维框架，与 AI 模拟患者进行多轮交互对话，<br>在辨病→平脉→析证→定治的训练中逐步提升临床思辨能力。</p>
+      <a href="/train?ui=20260804-2" class="hero-btn">开始临床思辨训练 →</a>
+    </div>
+    <div class="hero-compass" aria-hidden="true">
+      <b>辨</b>
+      <span>辨病</span><span>平脉</span><span>析证</span><span>定治</span>
+    </div>
+  </div>
+
+  <!-- 三大功能入口 -->
+  <div class="grid2 portal-actions">
+    <div class="card">
+      <h3>条文学习</h3>
+      <p>浏览《伤寒论》《金匮要略》等经典条文，支持按来源和关键词搜索。训练前温习，事半功倍。</p>
+      <a href="/study" class="btn">进入条文学习 →</a>
+    </div>
+    <div class="card">
+      <h3>临床思辨训练</h3>
+      <p>三阶梯交互训练：初级辨病 → 中级平脉析证 → 高级定治决策。与 AI 模拟患者多轮对话。</p>
+      <a href="/train?ui=20260804-2" class="btn">进入训练 →</a>
+    </div>
+  </div>
+
+  <!-- 数据概览 -->
+  <div class="quick-section stats-section">
+    <h3>系统数据概览</h3>
+    <div class="quick-grid">
+      <div class="quick-card"><div class="num" id="qTexts">-</div><div class="lbl">经典条文</div></div>
+      <div class="quick-card"><div class="num" id="qCases">-</div><div class="lbl">训练病案</div></div>
+      <div class="quick-card"><div class="num" id="qSessions">-</div><div class="lbl">训练记录</div></div>
+      <div class="quick-card"><div class="num" id="qAvg">-</div><div class="lbl">平均评分</div></div>
+    </div>
+  </div>
+
+  <!-- 条文快速浏览 -->
+  <div class="quick-section browse-section">
+    <h3>条文快速浏览</h3>
+    <div class="search-bar">
+      <input id="searchInput" placeholder="搜索条文内容、关键词或来源经典（如伤寒、金匮）…" onkeydown="if(event.key==='Enter')searchTexts()">
+      <button onclick="searchTexts()">搜索</button>
+    </div>
+    <div class="result-list" id="searchResults">
+      <div style="color:#b0a090;text-align:center;padding:20px;">输入关键词搜索条文，或直接开始训练</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+
+async function loadStats() {
+  try {
+    const resp = await fetch(`${API}/agent/public-stats`);
+    if (!resp.ok) throw new Error(`统计接口返回 ${resp.status}`);
+    const stats = await resp.json();
+    document.getElementById('qTexts').textContent = stats.text_count;
+    document.getElementById('qCases').textContent = stats.case_count;
+    document.getElementById('qSessions').textContent = stats.session_count;
+    document.getElementById('qAvg').textContent =
+      stats.average_score == null ? '--' : `${Math.round(stats.average_score)}分`;
+  } catch(e) { console.error(e); }
+}
+
+async function searchTexts() {
+  const q = document.getElementById('searchInput').value.trim();
+  const el = document.getElementById('searchResults');
+  if (!q) { el.innerHTML = '<div style="color:#b0a090;text-align:center;padding:20px;">输入关键词搜索条文</div>'; return; }
+  el.innerHTML = '<div style="color:#b0a090;text-align:center;padding:20px;">搜索中…</div>';
+  try {
+    const data = await (await fetch(`${API}/texts?limit=50&keyword=${encodeURIComponent(q)}`)).json();
+    if (!data.length) { el.innerHTML = '<div style="color:#b0a090;text-align:center;padding:20px;">未找到匹配条文</div>'; return; }
+    el.innerHTML = data.slice(0, 20).map(t => `
+      <div class="result-item">
+        <div class="meta"><span class="source">${esc(t.source_book)}</span> ${t.chapter ? '· '+esc(t.chapter) : ''} · ID:${t.id}</div>
+        <div>${esc(t.content)}</div>
+        ${t.keywords ? `<div style="color:#8b5a2b;font-size:12px;margin-top:4px;">关键词：${esc(t.keywords)}</div>` : ''}
+      </div>
+    `).join('');
+  } catch(e) { el.innerHTML = '<div style="color:#c0392b;text-align:center;padding:20px;">搜索失败</div>'; }
+}
+
+function esc(s) { if(!s) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+loadStats();
+</script>
+</body>
+</html>

@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>条文学习</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;background:#f5efe0;color:#3d2b1f;min-height:100vh}
+.header{background:linear-gradient(135deg,#5c3d2e,#8b5a2b);color:#f5efe0;padding:10px 24px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.header h1{font-size:20px;font-weight:600}
+.header .nav{display:flex;gap:6px;margin-left:auto}
+.header .nav a{color:#e8d5b0;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:14px;transition:.2s}
+.header .nav a:hover,.header .nav a.active{background:rgba(255,255,255,.15);color:#fff}
+.container{max-width:960px;margin:0 auto;padding:20px}
+
+.tabs{display:flex;gap:4px;margin-bottom:16px;background:#fff;border-radius:10px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.06);flex-wrap:wrap}
+.tab{padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:.2s;color:#8a7a6a;white-space:nowrap}
+.tab.active{background:#8b5a2b;color:#fff}
+.tab:hover:not(.active){background:#fdf6ed}
+
+.panel{display:none}
+.panel.active{display:block}
+
+.disease-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.disease-card{background:#fff;border:1px solid #e8d5b0;border-radius:12px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.04);cursor:pointer;transition:.2s}
+.disease-card:hover{border-color:#8b5a2b;transform:translateY(-2px)}
+.disease-card h3{color:#5c3d2e;font-size:17px;margin-bottom:6px}
+.disease-card .desc{color:#8a7a6a;font-size:13px;line-height:1.6;margin-bottom:8px}
+.disease-card .count{font-size:12px;color:#b0a090}
+
+.text-list{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.text-item{background:#fff;border:1px solid #e8d5b0;border-radius:10px;padding:14px;transition:.2s}
+.text-item:hover{border-color:#8b5a2b}
+.text-item .hdr{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.text-item .src-badge{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#f0e2cc;color:#8b5a2b;white-space:nowrap}
+.text-item .content{font-size:15px;line-height:1.8}
+.text-item .ai-btn{margin-top:8px;padding:6px 14px;background:#8b5a2b;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px}
+.text-item .ai-btn:hover{background:#6b3f1a}
+.text-item .ai-result{display:none;margin-top:8px;padding:12px;background:#f0e2cc;border-radius:8px;font-size:14px;line-height:1.7;white-space:pre-line}
+.text-item .ai-result.show{display:block}
+
+.search-row{display:flex;gap:10px;margin-bottom:16px}
+.search-row input{flex:1;padding:10px 14px;border:2px solid #e0d5c0;border-radius:10px;font-size:14px;outline:none;font-family:inherit;background:#fff}
+.search-row input:focus{border-color:#8b5a2b}
+.btn{padding:10px 20px;background:#8b5a2b;color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600}
+.btn:hover{background:#6b3f1a}
+.btn-sm{padding:6px 12px;font-size:12px;border-radius:6px}
+.btn-outline{background:#fff;color:#8b5a2b;border:2px solid #8b5a2b}
+.btn-outline:hover{background:#fdf6ed}
+
+.back-btn{margin-bottom:12px;padding:8px 16px;background:#fff;color:#8b5a2b;border:2px solid #8b5a2b;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:none}
+.back-btn:hover{background:#fdf6ed}
+
+.empty{text-align:center;color:#b0a090;padding:40px}
+.loading-text{color:#b0a090;font-size:13px}
+</style>
+<link rel="stylesheet" href="/static/jingui-theme.css?v=20260805">
+<script src="/static/jingui-motion.js?v=20260805" defer></script>
+</head>
+<body class="theme-study">
+
+<div class="header">
+  <a class="brand-home" href="/newcase" aria-label="返回金匮要略首页"><h1>经典条文研习</h1></a>
+  <div class="nav">
+    <a href="/">管理端</a>
+    <a href="/newcase">首页</a>
+    <a href="/train?ui=20260804-2">开始训练</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="library-intro">
+    <div class="library-overline">CLASSICS ARCHIVE · 金匮研习</div>
+    <h2>以病证为索引，回到经典原文</h2>
+    <p>在篇章、病证与关键词之间切换阅读路径，让每一次检索都回到临床问题。</p>
+  </div>
+  <div class="tabs" id="mainTabs">
+    <div class="tab active" onclick="showPanel('disease')">按病证学习</div>
+    <div class="tab" onclick="showPanel('chapters')">按篇章浏览</div>
+    <div class="tab" onclick="showPanel('search')">全文搜索</div>
+  </div>
+
+  <!-- 按病证学习 -->
+  <div class="panel active" id="panelDisease">
+    <div class="disease-grid" id="diseaseGrid"></div>
+    <button class="back-btn" id="backBtn" onclick="backToDisease()">← 返回病证列表</button>
+    <div id="diseaseDetail" style="display:none">
+      <h2 id="detailTitle" style="color:#5c3d2e;margin-bottom:8px;"></h2>
+      <p id="detailDesc" style="color:#8a7a6a;margin-bottom:16px;line-height:1.7;"></p>
+      <div class="text-list" id="detailTexts"></div>
+    </div>
+  </div>
+
+  <!-- 按篇章浏览（新） -->
+  <div class="panel" id="panelChapters">
+    <div id="chapterTree"><div class="loading-text">加载篇章结构…</div></div>
+    <button class="back-btn" id="chapBackBtn" onclick="backToChapters()" style="display:none">← 返回篇章列表</button>
+    <div id="chapterDetail" style="display:none">
+      <h2 id="chapDetailTitle" style="color:#5c3d2e;margin-bottom:8px;"></h2>
+      <div class="text-list" id="chapDetailTexts"></div>
+    </div>
+  </div>
+
+  <!-- 全文搜索 -->
+  <div class="panel" id="panelSearch">
+    <div class="search-row">
+      <input id="searchInput" placeholder="搜索条文内容、关键词、病证名…" onkeydown="if(event.key==='Enter')doSearch()">
+      <button class="btn" onclick="doSearch()">搜索</button>
+      <button class="btn btn-outline" onclick="resetSearch()">重置</button>
+    </div>
+    <div class="text-list" id="searchResults"><div class="empty">输入关键词搜索</div></div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let allTexts = [], currentDisease = null;
+
+// 病证定义（来自金匮要略）
+const DISEASES = [
+  { id:'湿病', name:'湿病', desc:'外感风湿所致的关节疼痛、身重等证。《金匮》痉湿暍病篇。代表方：桂枝附子汤、白术附子汤、甘草附子汤、麻杏薏甘汤。', keys:['湿','关节','身重','烦疼','风湿'] },
+  { id:'胸痹', name:'胸痹', desc:'胸阳不振、痰浊痹阻所致的胸闷痛证。《金匮》胸痹心痛短气病篇。代表方：栝楼薤白白酒汤、栝楼薤白半夏汤、枳实薤白桂枝汤。', keys:['胸痹','胸','闷','痛','薤白','栝楼'] },
+  { id:'痰饮', name:'痰饮', desc:'水液代谢失常形成的有形之邪。《金匮》痰饮咳嗽病篇。分痰饮、悬饮、溢饮、支饮四类。代表方：苓桂术甘汤、小青龙汤、十枣汤。', keys:['痰饮','饮','咳','喘','小青龙','苓桂'] },
+  { id:'水气', name:'水气病', desc:'体内水液潴留所致的浮肿病证。《金匮》水气病篇。分风水、皮水、正水、石水。代表方：越婢汤、防己黄芪汤。', keys:['水气','水','肿','浮','小便不利','越婢'] },
+  { id:'虚劳', name:'虚劳', desc:'脏腑气血阴阳亏损的慢性衰弱证。《金匮》血痹虚劳病篇。代表方：黄芪桂枝五物汤、薯蓣丸、肾气丸、酸枣仁汤。', keys:['虚劳','虚','劳','血痹','麻木','乏力','薯蓣','肾气'] },
+  { id:'黄疸', name:'黄疸', desc:'湿热或寒湿所致的黄疸病证。《金匮》黄疸病篇。分谷疸、酒疸、女劳疸。代表方：茵陈蒿汤、栀子大黄汤。', keys:['黄疸','黄','身黄','目黄','小便黄','茵陈'] },
+  { id:'百合病', name:'百合病', desc:'心肺阴虚内热所致的精神恍惚证。《金匮》百合狐惑阴阳毒病篇。代表方：百合地黄汤、百合知母汤。', keys:['百合','恍惚','欲卧不能卧','欲行不能行'] },
+  { id:'腹满寒疝', name:'腹满寒疝', desc:'腹部胀满及寒性腹痛证。《金匮》腹满寒疝宿食病篇。代表方：厚朴七物汤、大建中汤。', keys:['腹满','寒疝','腹痛','腹胀','厚朴'] },
+  // ===== 伤寒论六经分类 =====
+  { id:'太阳病', name:'太阳病', desc:'《伤寒论》六经辨证首层，病在表。分中风（桂枝汤证）与伤寒（麻黄汤证），兼蓄水蓄血变证。', keys:['太阳病','太阳','脉浮','头项强痛','恶寒','桂枝汤','麻黄汤'] },
+  { id:'阳明病', name:'阳明病', desc:'《伤寒论》六经辨证第二层，里实热证。分经证（白虎汤）与腑证（承气汤）。', keys:['阳明病','阳明','胃家实','白虎汤','承气汤','潮热','谵语'] },
+  { id:'少阳病', name:'少阳病', desc:'《伤寒论》六经辨证第三层，半表半里证。代表方：小柴胡汤。', keys:['少阳病','少阳','小柴胡汤','口苦','咽干','目眩','往来寒热','胸胁苦满'] },
+  { id:'太阴病', name:'太阴病', desc:'《伤寒论》六经辨证第四层，脾虚寒湿证。代表方：理中汤/四逆辈。', keys:['太阴病','太阴','腹满而吐','食不下','自利益甚'] },
+  { id:'少阴病', name:'少阴病', desc:'《伤寒论》六经辨证第五层，心肾虚衰。分寒化（四逆汤）与热化（黄连阿胶汤）。', keys:['少阴病','少阴','脉微细','但欲寐','四逆汤','真武汤','黄连阿胶'] },
+  { id:'厥阴病', name:'厥阴病', desc:'《伤寒论》六经辨证末层，寒热错杂。代表方：乌梅丸、当归四逆汤。', keys:['厥阴病','厥阴','消渴','气上撞心','乌梅丸','蛔厥'] },
+  { id:'霍乱', name:'霍乱', desc:'《伤寒论》辨霍乱病篇。以呕吐而利为主证。代表方：理中汤/四逆汤。', keys:['霍乱','呕吐而利','吐利'] },
+];
+
+async function init() {
+  try {
+    allTexts = await (await fetch(`${API}/texts?limit=2000`)).json();
+    renderDiseaseGrid();
+  } catch(e) {
+    document.getElementById('diseaseGrid').innerHTML = '<div class="empty">加载失败</div>';
+  }
+}
+
+function showPanel(name) {
+  document.querySelectorAll('#mainTabs .tab').forEach((t,i) => {
+    t.classList.toggle('active', (name==='disease'&&i===0)||(name==='chapters'&&i===1)||(name==='search'&&i===2));
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel'+{disease:'Disease',chapters:'Chapters',search:'Search'}[name]).classList.add('active');
+  if (name === 'chapters' && !window._chapterTreeLoaded) {
+    loadChapterTree();
+    window._chapterTreeLoaded = true;
+  }
+}
+
+function renderDiseaseGrid() {
+  const counts = {};
+  // 金匮要略（前8个） + 伤寒论（后7个）
+  const jingui = DISEASES.slice(0, 8);
+  const shanghan = DISEASES.slice(8);
+  
+  DISEASES.forEach(d => {
+    const isJingui = jingui.includes(d);
+    const srcBook = isJingui ? '《金匮要略》' : '《伤寒论》';
+    counts[d.id] = allTexts.filter(t => 
+      t.source_book === srcBook && d.keys.some(k => (t.content||'').includes(k) || (t.keywords||'').includes(k))
+    ).length;
+  });
+  
+  const renderGroup = (title, list, index) => `
+    <div class="library-group-title">
+      <span>${index}</span>${title} <small>（${list.reduce((s,d)=>s+(counts[d.id]||0),0)} 条）</small>
+    </div>
+    ${list.map(d => `
+      <div class="disease-card" onclick="showDisease('${d.id}')">
+        <h3>${d.name}</h3>
+        <div class="desc">${d.desc.substring(0,80)}...</div>
+        <div class="count">相关条文：${counts[d.id]} 条</div>
+      </div>
+    `).join('')}
+  `;
+  
+  document.getElementById('diseaseGrid').innerHTML = 
+    renderGroup('金匮要略', jingui, '01') +
+    renderGroup('伤寒论', shanghan, '02');
+}
+
+function showDisease(id) {
+  currentDisease = id;
+  const d = DISEASES.find(x => x.id === id);
+  if (!d) return;
+  document.getElementById('diseaseGrid').style.display = 'none';
+  document.getElementById('backBtn').style.display = 'inline-block';
+  document.getElementById('diseaseDetail').style.display = 'block';
+  document.getElementById('detailTitle').textContent = d.name;
+  document.getElementById('detailDesc').textContent = d.desc;
+  
+  const isJingui = DISEASES.indexOf(d) < 8;
+  const srcBook = isJingui ? '《金匮要略》' : '《伤寒论》';
+  const texts = allTexts.filter(t => t.source_book === srcBook && d.keys.some(k => (t.content||'').includes(k) || (t.keywords||'').includes(k)));
+  const el = document.getElementById('detailTexts');
+  if (!texts.length) { el.innerHTML = '<div class="empty">暂无相关条文</div>'; return; }
+  el.innerHTML = texts.slice(0, 30).map((t,i) => `
+    <div class="text-item">
+      <div class="hdr"><span class="src-badge">${esc(t.source_book)}</span> ${t.chapter?esc(t.chapter):''} <span style="color:#b0a090;font-size:11px;margin-left:auto">ID:${t.id}</span></div>
+      <div class="content">${esc(t.content)}</div>
+      ${t.keywords ? `<div style="color:#8b5a2b;font-size:12px;margin-top:4px;">关键词：${esc(t.keywords)}</div>` : ''}
+      <button class="ai-btn" onclick="aiExplain(event,${t.id},${i},'${id}')">AI 解读</button>
+      <div class="ai-result" id="aiRes${id}${i}"></div>
+    </div>
+  `).join('');
+}
+
+function backToDisease() {
+  document.getElementById('diseaseGrid').style.display = 'grid';
+  document.getElementById('backBtn').style.display = 'none';
+  document.getElementById('diseaseDetail').style.display = 'none';
+  currentDisease = null;
+}
+
+function findTextById(id) {
+  return (allTexts || []).find(x => String(x.id) === String(id))
+      || (window._chapterTexts || []).find(x => String(x.id) === String(id))
+      || null;
+}
+
+function extractError(text) {
+  const m = /【错误信息】([^\n]+)/.exec(text || '');
+  return m ? m[1].trim() : '';
+}
+
+// 通用 AI 解读：三个 tab（病证/篇章/搜索）共用
+async function aiExplainFor(ev, textId, boxId, contextLine, btn) {
+  if (ev) ev.stopPropagation();
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  if (box.classList.contains('show')) { box.classList.remove('show'); return; }
+  const t = findTextById(textId);
+  box.classList.add('show');
+  if (!t) { box.textContent = '找不到该条文'; return; }
+  if (btn) { btn.dataset.label = btn.textContent; btn.disabled = true; btn.textContent = '解读中…'; }
+  box.textContent = '解读中…（推理模型约需 20–40 秒）';
+  const ctx = contextLine || `来源：${t.source_book || ''} ${t.chapter || ''}`;
+  try {
+    const resp = await fetch(`${API}/analysis/query`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: `作为中医教学助手，请对以下条文进行简明解读（控制在200字以内）。\n\n${ctx}\n条文：${t.content}\n来源：${t.source_book || ''} ${t.chapter || ''}\n\n请按“核心含义：”“辨证要点：”“临床应用：”三个普通段落简要说明。不要使用 Markdown、星号、长横线或分隔线。` })
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const text = cleanAnalysisText(data.analysis_result);
+    if (!text || /占位分析/.test(text)) {
+      box.textContent = '解读失败：' + (extractError(text) || '模型未返回有效内容');
+    } else {
+      box.textContent = text;
+    }
+  } catch (e) {
+    box.textContent = 'AI 解读失败：' + (e && e.message ? e.message : e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.label || 'AI 解读'; }
+  }
+}
+
+async function aiExplain(ev, textId, idx, diseaseId) {
+  const d = DISEASES.find(x => x.id === diseaseId);
+  const ctx = d ? `病证背景：${d.name}。${d.desc}` : '病证背景：无';
+  const btn = ev && ev.target && ev.target.tagName === 'BUTTON' ? ev.target : null;
+  return aiExplainFor(ev, textId, 'aiRes' + diseaseId + idx, ctx, btn);
+}
+
+function cleanAnalysisText(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/```[^\n]*/g, '')
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/^\s*[-+*•]\s+/gm, '')
+    .replace(/^\s*(?:[-—–_=*]){3,}\s*$/gm, '')
+    .replace(/~~([^~\n]+)~~/g, '$1')
+    .replace(/\*+/g, '')
+    .replace(/`/g, '')
+    .replace(/[—–]{2,}/g, '，')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function doSearch() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const el = document.getElementById('searchResults');
+  if (!q) { el.innerHTML = '<div class="empty">输入关键词搜索</div>'; return; }
+  const texts = allTexts.filter(t => (t.content||'').toLowerCase().includes(q) || (t.keywords||'').toLowerCase().includes(q) || (t.source_book||'').toLowerCase().includes(q));
+  if (!texts.length) { el.innerHTML = '<div class="empty">未找到匹配条文</div>'; return; }
+  el.innerHTML = texts.slice(0, 40).map(t => {
+    const boxId = 'searchAiRes' + t.id;
+    return `
+    <div class="text-item">
+      <div class="hdr"><span class="src-badge">${esc(t.source_book)}</span> ${t.chapter?esc(t.chapter):''}</div>
+      <div class="content">${esc(t.content)}</div>
+      <button class="ai-btn" onclick="aiExplainFor(event,${t.id},'${boxId}',null,this)">AI 解读</button>
+      <div class="ai-result" id="${boxId}"></div>
+    </div>`;
+  }).join('');
+}
+function resetSearch() { document.getElementById('searchInput').value=''; document.getElementById('searchResults').innerHTML='<div class="empty">输入关键词搜索</div>'; }
+
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+// ========== 篇章树浏览 ==========
+async function loadChapterTree() {
+  const el = document.getElementById('chapterTree');
+  try {
+    const resp = await fetch(API + '/texts/chapters');
+    const books = await resp.json();
+    if (!books || !books.length) { el.innerHTML = '<div class="empty">暂无篇章数据，请先导入条文</div>'; return; }
+    el.innerHTML = books.map(book => {
+      const totalActual = book.chapters.reduce((s,ch) => s + (ch.actual_count||0), 0);
+      return '<div style="margin-bottom:20px">' +
+        '<h3 style="color:#5c3d2e;margin-bottom:10px;font-size:18px">' + esc(book.book) +
+        ' <span style="font-size:13px;color:#b0a090;font-weight:400">（' + totalActual + ' 条）</span></h3>' +
+        '<div class="disease-grid">' +
+        book.chapters.map(ch => {
+          const warn = ch.actual_count===0 ? '<div class="desc" style="color:#c0392b">无数据</div>' : '';
+          return '<div class="disease-card" onclick="showChapter(\'' +
+            esc(book.book) + '\',\'' + esc(ch.chapter) + '\',\'' + (ch.section||'') + '\')">' +
+            '<h3>' + esc(ch.chapter) + (ch.section?'（'+esc(ch.section)+'）':'') + '</h3>' +
+            '<div class="count">' + (ch.actual_count||0) + ' 条' +
+            (ch.expected_count?' / 预期 '+ch.expected_count+' 条':'') + '</div>' + warn + '</div>';
+        }).join('') + '</div></div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="empty">加载失败: '+esc(String(e))+'</div>';
+  }
+}
+
+async function showChapter(book, chapter, section) {
+  document.getElementById('chapterTree').style.display = 'none';
+  document.getElementById('chapBackBtn').style.display = 'inline-block';
+  document.getElementById('chapterDetail').style.display = 'block';
+  document.getElementById('chapDetailTitle').textContent = book + ' · ' + chapter + (section?'（'+section+'）':'');
+  const el = document.getElementById('chapDetailTexts');
+  el.innerHTML = '<div class="loading-text">加载中…</div>';
+  try {
+    var params = 'source_book=' + encodeURIComponent(book) + '&chapter=' + encodeURIComponent(chapter) + '&limit=500&sort_by=article_number';
+    if (section) params += '&section=' + encodeURIComponent(section);
+    const texts = await (await fetch(API + '/texts?' + params)).json();
+    if (!texts.length) { el.innerHTML = '<div class="empty">本章节暂无条文</div>'; return; }
+    window._chapterTexts = texts;
+    el.innerHTML = texts.map(function(t) {
+      var num = t.article_number ? '<span style="color:#8b5a2b;font-weight:700;font-size:13px">第'+t.article_number+'条</span>' : '';
+      var vfy = t.verified ? '<span style="color:#27ae60;font-size:11px;margin-left:auto">已校验</span>' : '';
+      var kw = t.keywords ? '<div style="color:#8b5a2b;font-size:12px;margin-top:4px">关键词：'+esc(t.keywords)+'</div>' : '';
+      var boxId = 'chapAiRes' + t.id;
+      var ctx = '篇章：' + book + ' · ' + chapter + (section ? '（' + section + '）' : '');
+      var aiBtn = '<button class="ai-btn" onclick="aiExplainFor(event,' + t.id + ',\'' + boxId + '\',\'' +
+        ctx.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\',this)">AI 解读</button>' +
+        '<div class="ai-result" id="' + boxId + '"></div>';
+      return '<div class="text-item"><div class="hdr"><span class="src-badge">'+esc(t.source_book)+'</span> ' +
+        num + vfy + '</div><div class="content">'+esc(t.content)+'</div>'+kw+aiBtn+'</div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="empty">加载失败</div>';
+  }
+}
+
+function backToChapters() {
+  document.getElementById('chapterTree').style.display = 'block';
+  document.getElementById('chapBackBtn').style.display = 'none';
+  document.getElementById('chapterDetail').style.display = 'none';
+}
+
+init();
+</script>
+</body>
+</html>

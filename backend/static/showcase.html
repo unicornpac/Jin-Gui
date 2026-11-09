@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>金匮要略 · 临床思辨训练系统</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+/* ============================================================
+   CSS RESET & CUSTOM PROPERTIES
+   ============================================================ */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+:root {
+  --bg-deep:    #0a0a0a;
+  --bg-surface: #111111;
+  --bg-card:    #161616;
+  --gold:       #c49b4c;
+  --gold-dim:   #8b6f3a;
+  --gold-light: #d4af6a;
+  --cream:      #e8e0d0;
+  --cream-dim:  #a09888;
+  --vermillion: #c43a31;
+  --vermillion-light: #e0554d;
+  --white:      #f5efe0;
+  --font-display: 'Noto Serif SC', 'Source Han Serif SC', 'STSong', 'SimSun', 'Songti SC', serif;
+  --font-sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+html { scroll-behavior: auto; background: var(--bg-deep); }
+body {
+  font-family: var(--font-sans);
+  color: var(--cream);
+  background: var(--bg-deep);
+  overflow-x: hidden;
+  cursor: crosshair;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   CANVAS BACKGROUND
+   ============================================================ */
+#inkCanvas {
+  position: fixed; inset:0; z-index:0;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* ============================================================
+   CURSOR AURA
+   ============================================================ */
+.cursor-aura {
+  position: fixed; z-index:9999;
+  width:200px; height:200px;
+  border-radius:50%;
+  background: radial-gradient(circle, rgba(196,155,76,0.08) 0%, transparent 70%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: width .4s, height .4s, background .4s;
+  will-change: left, top;
+}
+.cursor-aura.hovering {
+  width:60px; height:60px;
+  background: radial-gradient(circle, rgba(196,155,76,0.25) 0%, transparent 70%);
+}
+
+/* ============================================================
+   MAIN WRAPPER
+   ============================================================ */
+.page-wrapper { position:relative; z-index:1; }
+
+/* ============================================================
+   TOP NAV — Minimal, elegant
+   ============================================================ */
+.top-nav {
+  position:fixed; top:0; left:0; right:0;
+  z-index:100;
+  padding: 20px 32px;
+  display:flex; align-items:center; justify-content:space-between;
+  mix-blend-mode: difference;
+}
+.top-nav .logo {
+  display:flex; align-items:center; gap:10px;
+  color: var(--cream);
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+.top-nav .logo i { width:22px; height:22px; color: var(--gold); }
+.top-nav .nav-links { display:flex; gap:28px; align-items:center; }
+.top-nav .nav-links a {
+  color: var(--cream-dim);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: color .3s;
+  display:flex; align-items:center; gap:6px;
+}
+.top-nav .nav-links a i { width:15px; height:15px; }
+.top-nav .nav-links a:hover { color: var(--gold); }
+
+/* ============================================================
+   HERO SECTION — Radical typography
+   ============================================================ */
+.hero {
+  height:100vh; min-height:700px;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  position:relative;
+  padding: 0 40px;
+}
+.hero-seal {
+  position:absolute;
+  top: 25%; right: 12%;
+  width: 80px; height: 80px;
+  border: 2px solid var(--vermillion);
+  border-radius: 50%;
+  opacity:0;
+  display:flex; align-items:center; justify-content:center;
+}
+.hero-seal i { width:36px; height:36px; color: var(--vermillion); }
+.hero-tagline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 32px;
+  opacity:0;
+}
+.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(48px, 8vw, 110px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: 4px;
+  text-align: center;
+  color: var(--white);
+  max-width: 900px;
+}
+.hero-title .line { display:block; overflow:hidden; }
+.hero-title .line .char { display:inline-block; opacity:0; transform:translateY(100px); }
+.hero-subtitle {
+  font-family: var(--font-display);
+  font-size: clamp(16px, 2vw, 22px);
+  color: var(--cream-dim);
+  margin-top: 36px;
+  letter-spacing: 8px;
+  opacity:0;
+}
+.hero-scroll {
+  position:absolute; bottom:40px;
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  opacity:0;
+}
+.hero-scroll span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+.hero-scroll i { width:16px; height:16px; color: var(--gold); animation: scrollBounce 2s ease-in-out infinite; }
+@keyframes scrollBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(8px)} }
+
+/* ============================================================
+   SECTION SPACING
+   ============================================================ */
+.section { padding: 140px 40px; position:relative; }
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 24px;
+}
+
+/* ============================================================
+   STATS SECTION — Broken grid, experimental
+   ============================================================ */
+.stats-section {
+  display:grid; grid-template-columns: repeat(4, 1fr);
+  gap:2px; max-width:1200px; margin:0 auto;
+  background: var(--bg-surface); border-radius: 2px;
+}
+.stat-panel {
+  background: var(--bg-card);
+  padding: 60px 32px;
+  text-align: center;
+  position:relative; overflow:hidden;
+  transition: background .4s;
+}
+.stat-panel::after {
+  content:''; position:absolute; inset:0;
+  background: radial-gradient(circle at 50% 50%, rgba(196,155,76,0.06) 0%, transparent 70%);
+  opacity:0; transition:opacity .4s;
+}
+.stat-panel:hover::after { opacity:1; }
+.stat-panel .stat-icon { margin-bottom:20px; }
+.stat-panel .stat-icon i { width:32px; height:32px; color: var(--gold); }
+.stat-panel .stat-number {
+  font-family: var(--font-display);
+  font-size: 56px; font-weight: 900;
+  color: var(--white); line-height: 1;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-panel .stat-label {
+  font-size: 13px;
+  color: var(--cream-dim);
+  letter-spacing: 2px;
+}
+
+/* ============================================================
+   FEATURES — Asymmetric grid
+   ============================================================ */
+.features-grid {
+  max-width:1200px; margin:0 auto;
+  display:grid;
+  grid-template-columns: 1.3fr 0.7fr 1fr;
+  grid-template-rows: auto auto;
+  gap:2px;
+}
+.feature-card {
+  background: var(--bg-card);
+  padding: 48px 36px;
+  position:relative;
+  overflow:hidden;
+  transition:background .4s;
+  display:flex; flex-direction:column;
+}
+.feature-card:nth-child(1) { grid-row: span 2; }
+.feature-card:nth-child(2) { grid-row: span 1; }
+.feature-card:nth-child(3) { grid-row: span 1; padding-top:64px; padding-bottom:64px; }
+.feature-card:nth-child(4) { grid-column: span 2; }
+
+.feature-card:hover { background: #1a1a1a; }
+.feature-card .fc-icon { margin-bottom: 28px; }
+.feature-card .fc-icon i { width: 28px; height: 28px; color: var(--gold); }
+.feature-card .fc-number {
+  font-family: var(--font-mono);
+  font-size: 11px; color: var(--gold-dim);
+  letter-spacing: 3px; margin-bottom: 16px;
+}
+.feature-card h3 {
+  font-family: var(--font-display);
+  font-size: 28px; font-weight: 700;
+  color: var(--white);
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+.feature-card p {
+  font-size: 14px; line-height: 1.8;
+  color: var(--cream-dim);
+  max-width: 360px;
+}
+
+/* ============================================================
+   QUOTE SECTION — Drama
+   ============================================================ */
+.quote-section {
+  max-width:1000px; margin:0 auto; padding: 120px 40px;
+  position:relative;
+}
+.quote-mark {
+  font-family: var(--font-display);
+  font-size: 180px;
+  line-height: 1;
+  color: var(--vermillion);
+  opacity: 0.15;
+  position: absolute;
+  top: 40px; left: 0;
+  pointer-events: none;
+}
+.quote-text {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--white);
+  letter-spacing: 2px;
+  position:relative; z-index:1;
+}
+.quote-author {
+  font-size: 14px;
+  color: var(--gold);
+  letter-spacing: 4px;
+  margin-top: 32px;
+  display:flex; align-items:center; gap:12px;
+}
+.quote-author::before { content:''; display:inline-block; width:40px; height:1px; background:var(--gold); }
+
+/* ============================================================
+   STEPS — Horizontal scroll / experimental timeline
+   ============================================================ */
+.steps-track {
+  max-width:1200px; margin:0 auto;
+  display:flex; gap:2px;
+}
+.step-card {
+  flex:1; background:var(--bg-card);
+  padding: 48px 32px;
+  position:relative;
+  transition:background .4s;
+  min-width: 200px;
+}
+.step-card:hover { background:#1a1a1a; }
+.step-card .step-phase {
+  font-family: var(--font-display);
+  font-size: 14px; color:var(--gold);
+  letter-spacing:3px; margin-bottom: 24px;
+}
+.step-card h4 {
+  font-family: var(--font-display);
+  font-size: 24px; color:var(--white);
+  margin-bottom: 12px;
+}
+.step-card p {
+  font-size: 13px; line-height:1.7;
+  color:var(--cream-dim);
+}
+.step-card .step-progress {
+  margin-top: 24px; height:2px;
+  background: var(--bg-surface);
+  position:relative; overflow:hidden;
+}
+.step-card .step-progress::after {
+  content:''; position:absolute; left:0; top:0; height:100%;
+  width:0%; background:var(--gold);
+  transition:width 1.5s ease;
+}
+
+/* ============================================================
+   CTA SECTION
+   ============================================================ */
+.cta-section {
+  text-align:center; padding:160px 40px 120px;
+  max-width:700px; margin:0 auto;
+}
+.cta-title {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight:700; color:var(--white);
+  margin-bottom: 24px; letter-spacing:2px;
+}
+.cta-btn {
+  display:inline-flex; align-items:center; gap:12px;
+  padding:18px 48px;
+  border: 1px solid var(--gold);
+  background: transparent;
+  color: var(--gold);
+  font-family: var(--font-sans);
+  font-size: 15px; font-weight:600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all .4s;
+  position:relative; overflow:hidden;
+}
+.cta-btn::before {
+  content:''; position:absolute; inset:0;
+  background: var(--gold);
+  transform: translateX(-100%);
+  transition: transform .4s cubic-bezier(.7,0,.3,1);
+}
+.cta-btn:hover::before { transform: translateX(0); }
+.cta-btn:hover { color: var(--bg-deep); }
+.cta-btn span, .cta-btn i { position:relative; z-index:1; }
+.cta-btn i { width:18px; height:18px; }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.site-footer {
+  border-top: 1px solid rgba(232,224,208,0.08);
+  padding: 48px 40px;
+  display:flex; justify-content: space-between;
+  align-items: center;
+  max-width:1200px; margin:0 auto;
+}
+.site-footer span {
+  font-size: 12px; color: var(--cream-dim);
+  letter-spacing: 1px;
+}
+.site-footer .footer-icons { display:flex; gap:16px; }
+.site-footer .footer-icons i {
+  width: 16px; height: 16px;
+  color: var(--cream-dim);
+  cursor: pointer;
+  transition: color .3s;
+}
+.site-footer .footer-icons i:hover { color: var(--gold); }
+
+/* ============================================================
+   REVEAL ANIMATIONS (scroll-triggered)
+   ============================================================ */
+.reveal {
+  opacity:0;
+  transform: translateY(60px);
+  transition: opacity 1s cubic-bezier(.2,.8,.2,1), transform 1s cubic-bezier(.2,.8,.2,1);
+}
+.reveal.visible { opacity:1; transform:translateY(0); }
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.25s; }
+.reveal-delay-3 { transition-delay: 0.4s; }
+.reveal-delay-4 { transition-delay: 0.55s; }
+
+/* ============================================================
+   MAGNETIC ELEMENTS
+   ============================================================ */
+.magnetic { transition: transform 0.3s cubic-bezier(.2,.8,.2,1); }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1024px) {
+  .stats-section { grid-template-columns: 1fr 1fr; }
+  .features-grid { grid-template-columns: 1fr 1fr; }
+  .feature-card:nth-child(1) { grid-row:span 1; }
+  .feature-card:nth-child(4) { grid-column:span 1; }
+  .steps-track { flex-direction:column; }
+}
+@media (max-width: 640px) {
+  .stats-section { grid-template-columns: 1fr; }
+  .features-grid { grid-template-columns: 1fr; }
+  .top-nav .nav-links { display:none; }
+  .hero-title { font-size:38px; }
+  .section { padding: 80px 20px; }
+}
+
+/* ============================================================
+   LOADING OVERLAY
+   ============================================================ */
+.loading-overlay {
+  position:fixed; inset:0; z-index:10000;
+  background: var(--bg-deep);
+  display:flex; align-items:center; justify-content:center;
+  transition: opacity .6s, visibility .6s;
+}
+.loading-overlay.hidden { opacity:0; visibility:hidden; pointer-events:none; }
+.loading-overlay i {
+  width: 40px; height: 40px;
+  color: var(--gold);
+  animation: loadingSpin 1.5s linear infinite;
+}
+@keyframes loadingSpin { 100% { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loader"><i data-lucide="loader-2"></i></div>
+
+<!-- Cursor Aura -->
+<div class="cursor-aura" id="cursorAura"></div>
+
+<!-- Ink Canvas Background -->
+<canvas id="inkCanvas"></canvas>
+
+<div class="page-wrapper">
+
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <a href="/" class="logo">
+      <i data-lucide="scroll-text"></i>
+      <span>金匮要略</span>
+    </a>
+    <div class="nav-links">
+      <a href="/"><i data-lucide="layout-dashboard"></i> 管理</a>
+      <a href="/user"><i data-lucide="home"></i> 首页</a>
+      <a href="/train"><i data-lucide="play-circle"></i> 训练</a>
+      <a href="/study"><i data-lucide="book-open"></i> 研习</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-seal" id="heroSeal"><i data-lucide="sparkles"></i></div>
+    <div class="hero-tagline" id="heroTagline">BEIJING UNIVERSITY OF CHINESE MEDICINE</div>
+    <h1 class="hero-title" id="heroTitle">
+      <span class="line"><span class="char">病</span><span class="char">脉</span><span class="char">证</span><span class="char">并</span><span class="char">治</span></span>
+    </h1>
+    <p class="hero-subtitle" id="heroSubtitle">临床思辨 · 从经典到临床</p>
+    <div class="hero-scroll" id="heroScroll">
+      <span>Scroll</span>
+      <i data-lucide="chevron-down"></i>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <section class="section">
+    <div class="section-label reveal">// 数据概览</div>
+    <div class="stats-section">
+      <div class="stat-panel reveal reveal-delay-1">
+        <div class="stat-icon"><i data-lucide="scroll-text"></i></div>
+        <div class="stat-number" data-target="396">0</div>
+        <div class="stat-label">经典条文</div>
+      </div>
+      <div class="stat-panel reveal reveal-delay-2">
+        <div class="stat-icon"><i data-lucide="file-text"></i></div>
+        <div class="stat-number" data-target="9">0</div>
+        <div class="stat-label">训练病案</div>
+      </div>
+      <div class="stat-panel reveal reveal-delay-3">
+        <div class="stat-icon"><i data-lucide="users"></i></div>
+        <div class="stat-number" id="statSessions">--</div>
+        <div class="stat-label">训练记录</div>
+      </div>
+      <div class="stat-panel reveal reveal-delay-4">
+        <div class="stat-icon"><i data-lucide="award"></i></div>
+        <div class="stat-number" id="statAvg">--</div>
+        <div class="stat-label">平均评分</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="section">
+    <div class="section-label reveal">// 核心能力</div>
+    <div class="features-grid">
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="fc-icon"><i data-lucide="brain"></i></div>
+        <div class="fc-number">01</div>
+        <h3>三阶梯<br>思辨训练</h3>
+        <p>通过"辨病 → 平脉 → 析证 → 定治"的递进式训练框架，与 AI 模拟患者进行沉浸式多轮临床对话，在实战中打磨中医辨证思维。</p>
+      </div>
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="fc-icon"><i data-lucide="database"></i></div>
+        <div class="fc-number">02</div>
+        <h3>经典<br>条文库</h3>
+        <p>收录《伤寒论》《金匮要略》完整条文，智能匹配病案与经方。</p>
+      </div>
+      <div class="feature-card reveal reveal-delay-3" style="display:flex;align-items:center;justify-content:center;">
+        <i data-lucide="zap" style="width:48px;height:48px;color:var(--gold);opacity:0.6;"></i>
+      </div>
+      <div class="feature-card reveal reveal-delay-4">
+        <div class="fc-icon"><i data-lucide="bot"></i></div>
+        <div class="fc-number">03</div>
+        <h3>AI 患者<br>智能交互</h3>
+        <p>大模型驱动的模拟患者具备完整人格系统、情绪反馈和医学常识约束，呈现真实临床问诊体验。支持进度感知与行为变化。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quote -->
+  <section class="quote-section reveal">
+    <div class="quote-mark">"</div>
+    <p class="quote-text">
+      上以疗君亲之疾，<br>下以救贫贱之厄，<br>中以保身长全，以养其生。
+    </p>
+    <div class="quote-author">张仲景 · 《伤寒杂病论》序</div>
+  </section>
+
+  <!-- Training Steps -->
+  <section class="section">
+    <div class="section-label reveal">// 训练阶梯</div>
+    <div class="steps-track">
+      <div class="step-card reveal reveal-delay-1">
+        <div class="step-phase">阶段一</div>
+        <h4>辨病</h4>
+        <p>典型条文对应，症状信息提取和基础辨病，建立方证对应的直觉思维。</p>
+        <div class="step-progress" data-progress="25"></div>
+      </div>
+      <div class="step-card reveal reveal-delay-2">
+        <div class="step-phase">阶段二</div>
+        <h4>平脉</h4>
+        <p>脉象辅助辨证，理解脉证合参与脉证不符的临床判断逻辑。</p>
+        <div class="step-progress" data-progress="50"></div>
+      </div>
+      <div class="step-card reveal reveal-delay-3">
+        <div class="step-phase">阶段三</div>
+        <h4>析证</h4>
+        <p>相似方证鉴别，兼夹证与主次矛盾分析，深入病机层次。</p>
+        <div class="step-progress" data-progress="75"></div>
+      </div>
+      <div class="step-card reveal reveal-delay-4">
+        <div class="step-phase">阶段四</div>
+        <h4>定治</h4>
+        <p>复杂病案整体决策，矛盾信息处理、传变与坏病的综合判断。</p>
+        <div class="step-progress" data-progress="100"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section reveal">
+    <h2 class="cta-title">开始你的<br>临床思辨之旅</h2>
+    <a href="/train" class="cta-btn magnetic">
+      <span>进入训练</span>
+      <i data-lucide="arrow-right"></i>
+    </a>
+  </section>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <span>金匮教研室</span>
+    <div class="footer-icons">
+      <a href="/docs" title="API"><i data-lucide="code-2"></i></a>
+      <a href="https://github.com" target="_blank" title="GitHub"><i data-lucide="github"></i></a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+// ============================================================
+// LUCIDE ICONS INIT
+// ============================================================
+lucide.createIcons();
+
+// ============================================================
+// CANVAS INK WASH BACKGROUND
+// ============================================================
+(function() {
+  const canvas = document.getElementById('inkCanvas');
+  const ctx = canvas.getContext('2d');
+  let w, h, particles = [];
+  const MAX_PARTICLES = 60;
+  const TRAIL_LENGTH = 12;
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  class InkParticle {
+    constructor() {
+      this.reset();
+    }
+    reset() {
+      this.x = Math.random() * w;
+      this.y = Math.random() * h;
+      this.vx = (Math.random() - 0.5) * 0.4;
+      this.vy = (Math.random() - 0.5) * 0.4;
+      this.radius = Math.random() * 60 + 30;
+      this.opacity = Math.random() * 0.04 + 0.02;
+      this.history = [];
+      this.life = Math.random() * 400 + 200;
+      this.age = 0;
+      this.hue = Math.random() < 0.3 ? 40 : 28; // gold or warm
+      this.saturation = 30 + Math.random() * 20;
+      this.lightness = 55 + Math.random() * 25;
+    }
+    update() {
+      this.age++;
+      if (this.age > this.life) { this.reset(); return; }
+
+      // Organic drift with Perlin-like noise approximation
+      this.vx += (Math.random() - 0.5) * 0.15;
+      this.vy += (Math.random() - 0.5) * 0.15;
+      this.vx *= 0.98;
+      this.vy *= 0.98;
+
+      // Boundary soft bounce
+      if (this.x < -100) this.vx += 0.1;
+      if (this.x > w + 100) this.vx -= 0.1;
+      if (this.y < -100) this.vy += 0.1;
+      if (this.y > h + 100) this.vy -= 0.1;
+
+      this.x += this.vx;
+      this.y += this.vy;
+
+      this.history.push({ x: this.x, y: this.y });
+      if (this.history.length > TRAIL_LENGTH) this.history.shift();
+    }
+    draw(ctx) {
+      if (this.history.length < 2) return;
+      const lifeRatio = 1 - (this.age / this.life);
+      const alpha = this.opacity * lifeRatio;
+
+      for (let i = 1; i < this.history.length; i++) {
+        const p0 = this.history[i - 1];
+        const p1 = this.history[i];
+        const ratio = i / this.history.length;
+
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.strokeStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, ${alpha * ratio})`;
+        ctx.lineWidth = this.radius * ratio;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+    }
+  }
+
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    particles.push(new InkParticle());
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, w, h);
+
+    // Very subtle background wash
+    ctx.fillStyle = 'rgba(10,10,10,0.15)';
+    ctx.fillRect(0, 0, w, h);
+
+    particles.forEach(p => { p.update(); p.draw(ctx); });
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
+// ============================================================
+// CURSOR TRACKING
+// ============================================================
+(function() {
+  const aura = document.getElementById('cursorAura');
+  let mx = 0, my = 0;
+  let cx = 0, cy = 0;
+
+  document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+  // Magnetic hover detection
+  document.querySelectorAll('.magnetic, a, button, .stat-panel, .feature-card, .step-card').forEach(el => {
+    el.addEventListener('mouseenter', () => aura.classList.add('hovering'));
+    el.addEventListener('mouseleave', () => aura.classList.remove('hovering'));
+  });
+
+  function followCursor() {
+    cx += (mx - cx) * 0.08;
+    cy += (my - cy) * 0.08;
+    aura.style.left = cx + 'px';
+    aura.style.top = cy + 'px';
+    requestAnimationFrame(followCursor);
+  }
+  followCursor();
+})();
+
+// ============================================================
+// MAGNETIC EFFECT
+// ============================================================
+(function() {
+  document.querySelectorAll('.magnetic').forEach(el => {
+    el.addEventListener('mousemove', e => {
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      el.style.transform = `translate(${x * 0.2}px, ${y * 0.2}px)`;
+    });
+    el.addEventListener('mouseleave', () => { el.style.transform = 'translate(0,0)'; });
+  });
+})();
+
+// ============================================================
+// SCROLL REVEAL OBSERVER
+// ============================================================
+(function() {
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+
+        // Animate step progress bars
+        const progressBar = entry.target.querySelector('.step-progress');
+        if (progressBar) {
+          const target = progressBar.dataset.progress;
+          setTimeout(() => { progressBar.style.setProperty('--p', target + '%'); progressBar.querySelector('::after').style.width = target + '%'; }, 300);
+        }
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+})();
+
+// ============================================================
+// STEP PROGRESS POLYFILL (for ::after width animation)
+// ============================================================
+(function() {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = '';
+  document.head.appendChild(styleSheet);
+
+  const progressObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const bar = entry.target;
+        const target = bar.dataset.progress;
+        setTimeout(() => {
+          const idx = [...document.querySelectorAll('.step-progress')].indexOf(bar);
+          const rule = `.step-progress:nth-child(${idx + 1})::after, .step-progress.anim-${idx}::after { width: ${target}% !important; }`;
+          bar.classList.add('anim-' + idx);
+          styleSheet.textContent += rule;
+        }, 300);
+      }
+    });
+  }, { threshold: 0.15 });
+
+  document.querySelectorAll('.step-progress').forEach(el => progressObserver.observe(el));
+})();
+
+// ============================================================
+// HERO SPRING ANIMATION (character-by-character entrance)
+// ============================================================
+(function() {
+  const chars = document.querySelectorAll('.hero-title .char');
+  const tagline = document.getElementById('heroTagline');
+  const subtitle = document.getElementById('heroSubtitle');
+  const scroll = document.getElementById('heroScroll');
+  const seal = document.getElementById('heroSeal');
+
+  // Stagger each character with spring-like easing
+  chars.forEach((char, i) => {
+    setTimeout(() => {
+      char.style.transition = 'opacity 0.7s cubic-bezier(.2,.8,.2,1), transform 0.8s cubic-bezier(.1,.8,.3,1)';
+      char.style.opacity = '1';
+      char.style.transform = 'translateY(0)';
+    }, 300 + i * 80);
+  });
+
+  setTimeout(() => {
+    tagline.style.transition = 'opacity 1s ease';
+    tagline.style.opacity = '1';
+  }, 600);
+
+  setTimeout(() => {
+    subtitle.style.transition = 'opacity 1s ease';
+    subtitle.style.opacity = '1';
+  }, 900);
+
+  setTimeout(() => {
+    scroll.style.transition = 'opacity 1s ease';
+    scroll.style.opacity = '1';
+  }, 1300);
+
+  setTimeout(() => {
+    seal.style.transition = 'opacity 1.2s cubic-bezier(.2,.8,.2,1), transform 1s cubic-bezier(.2,.8,.2,1)';
+    seal.style.opacity = '1';
+    seal.style.transform = 'rotate(0deg)';
+  }, 400);
+
+  // Initial rotation state
+  seal.style.transform = 'rotate(-30deg) scale(0.8)';
+})();
+
+// ============================================================
+// COUNT-UP ANIMATION (stats numbers)
+// ============================================================
+(function() {
+  function easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+
+  function animateNumber(el, target, duration) {
+    const start = parseInt(el.textContent) || 0;
+    const startTime = performance.now();
+
+    function update(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = easeOutExpo(progress);
+      const current = Math.round(start + (target - start) * eased);
+      el.textContent = current;
+      if (progress < 1) requestAnimationFrame(update);
+    }
+    requestAnimationFrame(update);
+  }
+
+  const statsObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        const target = parseInt(el.dataset.target);
+        if (target && !el.dataset.animated) {
+          el.dataset.animated = '1';
+          animateNumber(el, target, 1800);
+        }
+      }
+    });
+  }, { threshold: 0.5 });
+
+  document.querySelectorAll('.stat-number[data-target]').forEach(el => statsObserver.observe(el));
+})();
+
+// ============================================================
+// LOAD LIVE DATA
+// ============================================================
+(async function() {
+  try {
+    const resp = await fetch('/api/agent/public-stats');
+    if (resp.ok) {
+      const stats = await resp.json();
+      document.getElementById('statSessions').textContent = stats.session_count || 0;
+      document.getElementById('statAvg').textContent =
+        stats.average_score != null ? Math.round(stats.average_score) + '分' : '--';
+    }
+  } catch(e) { /* silent */ }
+})();
+
+// ============================================================
+// LOADING SCREEN
+// ============================================================
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    document.getElementById('loader').classList.add('hidden');
+    // Re-init icons after DOM settles
+    lucide.createIcons();
+  }, 600);
+});
+
+// ============================================================
+// PARALLAX ON SCROLL
+// ============================================================
+(function() {
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        const scrollY = window.scrollY;
+        const heroSeal = document.getElementById('heroSeal');
+        if (heroSeal) {
+          heroSeal.style.transform = `translateY(${scrollY * 0.3}px) rotate(${scrollY * 0.05}deg)`;
+        }
+        ticking = false;
+      });
+      ticking = true;
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

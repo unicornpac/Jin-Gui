@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>《金匮要略》临床思辨训练</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f5efe0; color: #3d2b1f; height:100vh; display:flex; flex-direction:column;
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(139,90,43,0.06) 0%, transparent 70%);
+}
+/* ----- 顶栏 ----- */
+.header {
+  background: linear-gradient(135deg, #5c3d2e 0%, #8b5a2b 100%);
+  color:#f5efe0; padding:10px 24px; display:flex; align-items:center; gap:16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.2); z-index:10;
+}
+.header h1 { font-size:20px; font-weight:600; letter-spacing:1px; }
+.header .nav { display:flex; gap:6px; margin-left:auto; }
+.header .nav a {
+  color:#e8d5b0; text-decoration:none; padding:6px 14px; border-radius:6px;
+  font-size:14px; transition:.2s;
+}
+.header .nav a:hover, .header .nav a.active { background:rgba(255,255,255,.15); color:#fff; }
+
+/* ----- 主体布局 ----- */
+.main { display:flex; flex:1; overflow:hidden; }
+
+/* ----- 侧栏 ----- */
+.sidebar {
+  width:300px; min-width:300px; background:#fffaf2; border-right:1px solid #e0d5c0;
+  display:flex; flex-direction:column; overflow-y:auto; padding:16px;
+}
+.sidebar h3 { font-size:16px; color:#5c3d2e; margin-bottom:12px; }
+.sidebar .section { margin-bottom:20px; }
+
+/* 难度选择 */
+.diff-btns { display:flex; flex-direction:column; gap:8px; }
+.diff-btn {
+  padding:10px 14px; border:2px solid #d4c4a8; border-radius:8px; cursor:pointer;
+  background:#fff; font-size:14px; text-align:left; transition:.2s;
+}
+.diff-btn:hover { border-color:#8b5a2b; background:#fdf6ed; }
+.diff-btn.selected { border-color:#8b5a2b; background:#f0e2cc; font-weight:600; }
+.diff-btn .label { font-size:15px; display:block; margin-bottom:2px; }
+.diff-btn .desc { font-size:11px; color:#8a7a6a; display:block; }
+
+/* 按钮 */
+.btn {
+  width:100%; padding:10px; border:none; border-radius:8px; cursor:pointer;
+  font-size:14px; font-weight:600; transition:.2s; letter-spacing:.5px;
+}
+.btn-primary { background:#8b5a2b; color:#fff; }
+.btn-primary:hover { background:#6b3f1a; }
+.btn-primary:disabled { background:#c4b49a; cursor:not-allowed; }
+.btn-outline { background:#fff; color:#8b5a2b; border:2px solid #8b5a2b; }
+.btn-outline:hover { background:#fdf6ed; }
+
+/* 进度条 */
+.progress-steps { display:flex; flex-direction:column; gap:6px; }
+.progress-step {
+  display:flex; align-items:center; gap:10px; padding:8px 12px;
+  border-radius:6px; font-size:13px; transition:.3s;
+  background:#f5efe0; color:#b0a090;
+}
+.progress-step.active { background:#f0e2cc; color:#5c3d2e; font-weight:600; }
+.progress-step.done { background:#e8f0e0; color:#3d5c2e; }
+.progress-step .dot {
+  width:10px; height:10px; border-radius:50%; background:#d4c4a8; flex-shrink:0;
+}
+.progress-step.active .dot { background:#8b5a2b; box-shadow:0 0 8px rgba(139,90,43,.4); }
+.progress-step.done .dot { background:#5a8a3c; }
+
+/* ----- 聊天区 ----- */
+.chat-container { flex:1; display:flex; flex-direction:column; background:#faf7f0; }
+.chat-messages {
+  flex:1; overflow-y:auto; padding:20px 24px; display:flex; flex-direction:column; gap:14px;
+}
+.chat-messages::-webkit-scrollbar { width:6px; }
+.chat-messages::-webkit-scrollbar-thumb { background:#d4c4a8; border-radius:3px; }
+
+/* 欢迎屏 */
+.welcome {
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  color:#b0a090; text-align:center;
+}
+.welcome .icon { font-size:64px; margin-bottom:16px; opacity:.6; }
+.welcome h2 { font-size:22px; margin-bottom:8px; color:#8b5a2b; }
+.welcome p { font-size:14px; max-width:400px; line-height:1.6; }
+
+/* 消息气泡 */
+.msg { max-width:75%; padding:12px 16px; border-radius:12px; line-height:1.6; font-size:15px; animation: fadeIn .3s; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+.msg.agent { align-self:flex-start; background:#fff; border:1px solid #e8d5b0; border-bottom-left-radius:4px; }
+.msg.student { align-self:flex-end; background:#8b5a2b; color:#fff; border-bottom-right-radius:4px; }
+.msg.system { align-self:center; background:#fdf6ed; color:#b0a090; font-size:12px; padding:6px 14px; border-radius:20px; max-width:90%; }
+.msg .type-tag {
+  display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px;
+  margin-bottom:4px; font-weight:600;
+}
+.msg .type-tag.hint { background:#fff3cd; color:#856404; }
+.msg .type-tag.praise { background:#d4edda; color:#155724; }
+.msg .type-tag.correction { background:#f8d7da; color:#721c24; }
+.msg .type-tag.evaluation { background:#d1ecf1; color:#0c5460; }
+
+/* 输入区 */
+.chat-input {
+  padding:14px 20px; background:#fff; border-top:1px solid #e0d5c0;
+  display:flex; gap:10px;
+}
+.chat-input textarea {
+  flex:1; padding:10px 14px; border:2px solid #e0d5c0; border-radius:10px;
+  font-size:15px; font-family:inherit; resize:none; outline:none;
+  transition:.2s; min-height:44px; max-height:100px;
+}
+.chat-input textarea:focus { border-color:#8b5a2b; }
+.chat-input button {
+  padding:10px 20px; background:#8b5a2b; color:#fff; border:none; border-radius:10px;
+  cursor:pointer; font-size:15px; font-weight:600; transition:.2s; white-space:nowrap;
+}
+.chat-input button:hover { background:#6b3f1a; }
+.chat-input button:disabled { background:#c4b49a; cursor:not-allowed; }
+
+/* 弹窗 */
+.modal-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.5);
+  z-index:100; align-items:center; justify-content:center;
+}
+.modal-overlay.show { display:flex; }
+.modal {
+  background:#fff; border-radius:16px; width:90%; max-width:600px; max-height:80vh;
+  overflow-y:auto; padding:28px; box-shadow:0 8px 32px rgba(0,0,0,.2);
+}
+.modal h2 { color:#5c3d2e; margin-bottom:16px; font-size:20px; }
+.modal .eval-score { font-size:48px; font-weight:700; color:#8b5a2b; text-align:center; margin:12px 0; }
+.modal .eval-detail { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
+.modal .eval-item { background:#fdf6ed; padding:10px 14px; border-radius:8px; }
+.modal .eval-item .eval-label { font-size:12px; color:#b0a090; }
+.modal .eval-item .eval-value { font-size:16px; font-weight:600; color:#5c3d2e; }
+.modal .eval-text { background:#faf7f0; padding:14px; border-radius:8px; margin:10px 0; line-height:1.7; font-size:14px; }
+.modal .btn-row { display:flex; gap:10px; margin-top:16px; }
+
+/* 加载动画 */
+.loading { display:flex; align-items:center; gap:8px; color:#b0a090; padding:8px 16px; }
+.loading .dots { display:flex; gap:4px; }
+.loading .dots span {
+  width:6px; height:6px; border-radius:50%; background:#d4c4a8;
+  animation: bounce 1.2s infinite;
+}
+.loading .dots span:nth-child(2) { animation-delay:.2s; }
+.loading .dots span:nth-child(3) { animation-delay:.4s; }
+@keyframes bounce { 0%,80%,100% { transform:translateY(0); } 40% { transform:translateY(-6px); } }
+.stud-input { width:100%; padding:8px 10px; border:1px solid #e0d5c0; border-radius:6px;
+  font-size:14px; background:#fff; color:#3d2b1f; }
+.stud-input:focus { outline:none; border-color:#8b5a2b; }
+.stud-hint { font-size:11px; color:#b0a090; margin-top:6px; line-height:1.5; }
+</style>
+<link rel="stylesheet" href="/static/jingui-theme.css?v=20260805">
+<script src="/static/jingui-motion.js?v=20260805" defer></script>
+</head>
+<body class="theme-train">
+
+<div class="header">
+  <a class="brand-home" href="/newcase" aria-label="返回金匮要略首页"><h1>《金匮要略》临床思辨训练</h1></a>
+  <div class="nav">
+    <a href="/">管理端</a>
+    <a href="/newcase">首页</a>
+    <a href="/train?ui=20260804-2" class="active">开始训练</a>
+  </div>
+</div>
+
+<div class="main">
+  <!-- 侧栏 -->
+  <div class="sidebar">
+    <div class="rail-id">CASE LAB · 临床训练舱</div>
+
+    <div class="section" id="resumeSection" style="display:none">
+      <h3>未完成的训练</h3>
+      <div class="stud-hint" id="resumeInfo" style="margin-bottom:8px"></div>
+      <button class="btn btn-primary" onclick="resumeSession()" style="width:100%">继续上次训练</button>
+      <button class="btn" onclick="discardSession()" style="width:100%;margin-top:6px">放弃并重新开始</button>
+    </div>
+
+    <div class="section">
+      <h3>学员</h3>
+      <input id="studentId" class="stud-input" maxlength="32" placeholder="学号或姓名（可留空）">
+      <div class="stud-hint">留空则以匿名身份训练；填写后教师可按学号查看训练记录</div>
+    </div>
+    <div class="section">
+      <h3>选择训练难度</h3>
+      <div class="diff-btns" id="diffBtns">
+        <div class="diff-btn" data-level="初级" onclick="selectDiff('初级')">
+          <span class="label">初级 · 辨病与主证识别</span>
+          <span class="desc">典型条文对应，症状信息提取和基础辨病</span>
+        </div>
+        <div class="diff-btn" data-level="中级" onclick="selectDiff('中级')">
+          <span class="label">中级 · 平脉与析证</span>
+          <span class="desc">相似方证鉴别，脉象变化和兼夹证分析</span>
+        </div>
+        <div class="diff-btn" data-level="高级" onclick="selectDiff('高级')">
+          <span class="label">高级 · 定治与整体决策</span>
+          <span class="desc">复杂非典型病案，矛盾信息和传变</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <button class="btn btn-primary" id="startBtn" onclick="startSession()" disabled>开始训练</button>
+    </div>
+
+    <div class="section" id="sessionInfo" style="display:none">
+      <h3>训练信息</h3>
+      <div style="font-size:13px; color:#8a7a6a; line-height:1.8">
+        <div>难度：<strong id="infoLevel" style="color:#5c3d2e"></strong></div>
+        <div>病案：<strong id="infoCase" style="color:#b0a090;font-style:italic">训练结束后揭晓</strong></div>
+        <div>状态：<strong id="infoStatus" style="color:#5c3d2e"></strong></div>
+      </div>
+    </div>
+
+    <div class="section" id="progressSection" style="display:none">
+      <h3>🧭 辨治进度</h3>
+      <div class="progress-steps">
+        <div class="progress-step" id="step1"><span class="dot"></span>辨病</div>
+        <div class="progress-step" id="step2"><span class="dot"></span>平脉</div>
+        <div class="progress-step" id="step3"><span class="dot"></span>析证</div>
+        <div class="progress-step" id="step4"><span class="dot"></span>定治</div>
+      </div>
+    </div>
+
+    <div class="section" id="endSection" style="display:none">
+      <button class="btn btn-outline" onclick="evaluateSession()">结束训练并查看评价</button>
+    </div>
+
+    <div class="section">
+      <button class="btn btn-outline" onclick="openFeedback()" style="border-color:#d4c4a8;color:#8a7a6a;">💬 用户反馈</button>
+    </div>
+  </div>
+
+  <!-- 聊天区 -->
+  <div class="chat-container">
+    <div class="chat-messages" id="chatMessages">
+      <div class="welcome" id="welcomeScreen">
+        <div class="icon" aria-hidden="true">辨</div>
+        <h2>《金匮要略》临床思辨训练</h2>
+        <p>选择训练难度后点击「开始训练」，你将与模拟患者进行多轮对话。请运用"病脉证并治"思维框架，完成辨病→平脉→析证→定治的全过程。</p>
+        <div class="welcome-steps" aria-hidden="true"><span>01 辨病</span><span>02 平脉</span><span>03 析证</span><span>04 定治</span></div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <textarea id="msgInput" placeholder="请输入你的问诊或辨证内容…" rows="1" disabled
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+      <button id="sendBtn" onclick="sendMessage()" disabled>发送</button>
+    </div>
+  </div>
+</div>
+
+<!-- 评价弹窗 -->
+<div class="modal-overlay" id="evalModal">
+  <div class="modal">
+    <h2>训练评价报告</h2>
+    <div class="eval-score" id="evalScore">--</div>
+    <div class="eval-detail" id="evalDetail"></div>
+    <div class="eval-text" id="evalText"></div>
+    <div id="safetyReview" style="display:none;border-radius:10px;padding:14px;margin:14px 0;border:1px solid #d9c4a7;background:#faf7f0;">
+      <h4 id="safetyReviewTitle" style="margin:0 0 8px;"></h4>
+      <div id="safetyReviewSummary" style="font-size:14px;line-height:1.7;"></div>
+      <ul id="safetyReviewDetails" style="margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.7;"></ul>
+      <div style="font-size:12px;color:#8a7a6a;margin-top:8px;">仅用于训练复盘，不构成真实诊疗或用药建议。</div>
+    </div>
+    <div class="case-reveal" id="caseReveal" style="display:none;background:#f0e2cc;border:2px solid #8b5a2b;border-radius:10px;padding:16px;margin:14px 0;">
+      <h4 style="color:#5c3d2e;margin-bottom:8px;">病案揭晓</h4>
+      <div id="caseTitle" style="font-weight:600;margin-bottom:6px;"></div>
+      <pre id="caseAnswer" style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.7;color:#3d2b1f;"></pre>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="closeEval()">知道了</button>
+      <button class="btn btn-outline" onclick="closeEval();resetAll();">开始新训练</button>
+    </div>
+    <div class="related-texts" id="relatedTexts" style="display:none;margin-top:16px;border-top:1px solid #e0d5c0;padding-top:16px;">
+      <h4 style="color:#5c3d2e;margin-bottom:10px;">相关经典条文</h4>
+      <div id="relatedTextsContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 用户反馈弹窗 -->
+<div class="modal-overlay" id="feedbackModal">
+  <div class="modal">
+    <h2>用户反馈</h2>
+    <p style="font-size:13px;color:#8a7a6a;margin-bottom:16px;">欢迎提交任何意见、建议或问题反馈，帮助我们改进系统。</p>
+    <div class="form-row" style="margin-bottom:12px;">
+      <label style="display:block;font-size:13px;color:#8a7a6a;margin-bottom:4px;">反馈类别</label>
+      <select id="fbCategory" style="width:100%;padding:8px 12px;border:2px solid #e0d5c0;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff;">
+        <option value="功能建议">功能建议</option>
+        <option value="bug反馈">bug反馈</option>
+        <option value="使用体验">使用体验</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
+    <div class="form-row" style="margin-bottom:12px;">
+      <label style="display:block;font-size:13px;color:#8a7a6a;margin-bottom:4px;">反馈内容 <span style="color:#c0392b;">*</span></label>
+      <textarea id="fbContent" rows="5" placeholder="请详细描述你的意见或问题…（不少于5个字）" style="width:100%;padding:10px 12px;border:2px solid #e0d5c0;border-radius:8px;font-size:14px;font-family:inherit;outline:none;resize:vertical;min-height:100px;"></textarea>
+    </div>
+    <div class="form-row" style="margin-bottom:12px;">
+      <label style="display:block;font-size:13px;color:#8a7a6a;margin-bottom:4px;">联系方式（可选）</label>
+      <input id="fbContact" placeholder="邮箱或微信号，方便我们回复你" style="width:100%;padding:8px 12px;border:2px solid #e0d5c0;border-radius:8px;font-size:14px;font-family:inherit;outline:none;background:#fff;">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="submitFeedback()">提交反馈</button>
+      <button class="btn btn-outline" onclick="closeFeedback()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 全局状态 =====
+const API = '/api/agent';
+// 定向测验：/train?case=12 可指定病案（不传则按难度随机抽取）
+const presetCaseId = Number(new URLSearchParams(location.search).get('case')) || null;
+let sessionId = null;
+let sessionToken = null;
+let selectedDiff = '';
+let sessionActive = false;
+let progress = {};
+
+// ===== 难度选择 =====
+// ===== 学员身份与会话恢复（P2-7） =====
+const LS_STUDENT = 'jingui_student_id';
+const LS_SESSION = 'jingui_active_session';
+let pendingResume = null;
+
+function currentStudentId() {
+  const el = document.getElementById('studentId');
+  return ((el && el.value.trim()) || localStorage.getItem(LS_STUDENT) || '');
+}
+
+function rememberStudentId() {
+  const el = document.getElementById('studentId');
+  const v = el ? el.value.trim() : '';
+  if (v) localStorage.setItem(LS_STUDENT, v);
+}
+
+function saveActiveSession() {
+  try {
+    localStorage.setItem(LS_SESSION, JSON.stringify({
+      sessionId, sessionToken,
+      difficulty: selectedDiff,
+      studentId: currentStudentId() || 'anonymous',
+      startedAt: Date.now()
+    }));
+  } catch (e) { /* 隐私模式下 localStorage 不可用时忽略 */ }
+}
+
+function clearActiveSession() {
+  try { localStorage.removeItem(LS_SESSION); } catch (e) {}
+  pendingResume = null;
+  const sec = document.getElementById('resumeSection');
+  if (sec) sec.style.display = 'none';
+}
+
+function loadActiveSession() {
+  try { return JSON.parse(localStorage.getItem(LS_SESSION) || 'null'); } catch (e) { return null; }
+}
+
+async function fetchSessionDetail(id, token) {
+  return fetch(`${API}/session/${id}`, { headers: { 'X-Session-Token': token } });
+}
+
+// 页面加载时检查是否有可恢复的会话
+async function checkResume() {
+  const saved = loadActiveSession();
+  if (!saved || !saved.sessionId || !saved.sessionToken) { clearActiveSession(); return; }
+  try {
+    const resp = await fetchSessionDetail(saved.sessionId, saved.sessionToken);
+    if (!resp.ok) { clearActiveSession(); return; }
+    const data = await resp.json();
+    if (data.status !== 'active') { clearActiveSession(); return; }
+    const turns = (data.messages || []).filter(m => m.role === 'student').length;
+    document.getElementById('resumeInfo').textContent =
+      `难度：${data.difficulty_level} · 已进行 ${turns} 轮问诊`;
+    document.getElementById('resumeSection').style.display = 'block';
+    pendingResume = saved;
+  } catch (e) { /* 网络异常时不阻塞新训练 */ }
+}
+
+async function resumeSession() {
+  const saved = pendingResume || loadActiveSession();
+  if (!saved) return;
+  const resp = await fetchSessionDetail(saved.sessionId, saved.sessionToken);
+  if (!resp.ok) {
+    alert('该会话已结束或凭据失效，请重新开始训练');
+    clearActiveSession();
+    return;
+  }
+  const data = await resp.json();
+  sessionId = saved.sessionId;
+  sessionToken = saved.sessionToken;
+  selectedDiff = data.difficulty_level;
+  sessionActive = true;
+
+  document.getElementById('welcomeScreen').style.display = 'none';
+  document.getElementById('sessionInfo').style.display = 'block';
+  document.getElementById('progressSection').style.display = 'block';
+  document.getElementById('endSection').style.display = 'block';
+  document.getElementById('infoLevel').textContent = data.difficulty_level;
+  document.getElementById('infoCase').textContent = '训练结束后揭晓';
+  document.getElementById('infoStatus').textContent = '训练中';
+  document.getElementById('msgInput').disabled = false;
+  document.getElementById('sendBtn').disabled = false;
+
+  const box = document.getElementById('chatMessages');
+  box.innerHTML = '';
+  (data.messages || []).forEach(m => {
+    if (m.role === 'student') addMessage('student', m.content, m.message_type);
+    else if (m.role === 'agent') addMessage('agent', m.content, m.message_type);
+    else addMessage('system', m.content, m.message_type);
+  });
+  document.getElementById('resumeSection').style.display = 'none';
+  document.getElementById('msgInput').focus();
+}
+
+function discardSession() {
+  clearActiveSession();
+  const sec = document.getElementById('resumeSection');
+  if (sec) sec.style.display = 'none';
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const savedStudent = localStorage.getItem(LS_STUDENT);
+  const el = document.getElementById('studentId');
+  if (savedStudent && el) el.value = savedStudent;
+  if (presetCaseId) {
+    const sidebar = document.querySelector('.sidebar');
+    const tip = document.createElement('div');
+    tip.className = 'section';
+    tip.innerHTML = '<div class="stud-hint" style="color:#8b5a2b">已指定病案 #' +
+      presetCaseId + '，选择难度后开始训练</div>';
+    sidebar.insertBefore(tip, sidebar.querySelector('.section'));
+  }
+  checkResume();
+});
+function selectDiff(level) {
+  selectedDiff = level;
+  document.querySelectorAll('.diff-btn').forEach(b => b.classList.toggle('selected', b.dataset.level === level));
+  document.getElementById('startBtn').disabled = false;
+}
+
+// ===== 开始训练 =====
+async function startSession() {
+  if (!selectedDiff) return;
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('startBtn').textContent = '创建中…';
+  
+  try {
+    const resp = await fetch(`${API}/session/start`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign(
+        { difficulty_level: selectedDiff, student_id: currentStudentId() || 'anonymous' },
+        presetCaseId ? { case_id: presetCaseId } : {}
+      ))
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || '创建失败');
+    
+    const data = await resp.json();
+    sessionId = data.session_id;
+    sessionToken = data.session_token;
+    sessionActive = true;
+    rememberStudentId();
+    saveActiveSession();
+    
+    // 更新UI
+    document.getElementById('welcomeScreen').style.display = 'none';
+    document.getElementById('sessionInfo').style.display = 'block';
+    document.getElementById('progressSection').style.display = 'block';
+    document.getElementById('endSection').style.display = 'block';
+    document.getElementById('infoLevel').textContent = data.difficulty_level;
+    document.getElementById('infoCase').textContent = '训练结束后揭晓';
+    document.getElementById('infoStatus').textContent = '训练中';
+    document.getElementById('msgInput').disabled = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('msgInput').focus();
+    
+    // 显示开场白
+    addMessage('agent', data.agent_message, 'question');
+    updateProgress({辨病:false, 平脉:false, 析证:false, 定治:false});
+    
+  } catch(e) {
+    alert('启动训练失败: ' + e.message);
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('startBtn').textContent = '开始训练';
+  }
+}
+
+// ===== 发送消息 =====
+async function sendMessage() {
+  if (!sessionActive) return;
+  const input = document.getElementById('msgInput');
+  const content = input.value.trim();
+  if (!content) return;
+  
+  input.value = '';
+  input.disabled = true;
+  document.getElementById('sendBtn').disabled = true;
+  
+  addMessage('student', content);
+  showLoading();
+  
+  try {
+    const resp = await fetch(`${API}/session/${sessionId}/message`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'X-Session-Token': sessionToken || ''},
+      body: JSON.stringify({ content })
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || '发送失败');
+    
+    const data = await resp.json();
+    removeLoading();
+    addMessage('agent', data.agent_message, data.message_type);
+    if (data.progress) {
+      updateProgress(data.progress);
+    }
+    
+    if (data.session_status === 'completed') {
+      sessionActive = false;
+      addMessage('system', '对话已达上限，建议点击左侧「结束训练 & 查看评价」获取报告。');
+      document.getElementById('infoStatus').textContent = '建议评价';
+    }
+    
+  } catch(e) {
+    removeLoading();
+    addMessage('system', '消息发送失败: ' + e.message);
+  }
+  
+  input.disabled = !sessionActive;
+  document.getElementById('sendBtn').disabled = !sessionActive;
+  if (sessionActive) input.focus();
+}
+
+// ===== 评价 =====
+async function evaluateSession() {
+  if (!sessionId) return;
+  
+  document.getElementById('startBtn').disabled = true;
+  addMessage('system', '⏳ 正在生成评价报告…');
+  
+  try {
+    const resp = await fetch(`${API}/session/${sessionId}/evaluate`, {
+      method:'POST',
+      headers:{'X-Session-Token': sessionToken || ''}
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || '评价失败');
+    
+    const data = await resp.json();
+    sessionActive = false;
+    clearActiveSession();
+    document.getElementById('infoStatus').textContent = '已评价';
+    document.getElementById('msgInput').disabled = true;
+    document.getElementById('sendBtn').disabled = true;
+    
+    // 揭晓病案信息
+    if (data.case_title) {
+      document.getElementById('infoCase').textContent = data.case_title;
+      document.getElementById('infoCase').style.color = '#5c3d2e';
+      document.getElementById('infoCase').style.fontStyle = 'normal';
+      document.getElementById('caseReveal').style.display = 'block';
+      document.getElementById('caseTitle').innerHTML = '<strong>' + escHtml(data.case_title) + '</strong>';
+      document.getElementById('caseAnswer').textContent = data.case_correct_answer || '（无参考答案）';
+    }
+    let evalData;
+    try { evalData = JSON.parse(data.evaluation); } catch(e) { evalData = null; }
+    
+    if (evalData && Object.prototype.hasOwnProperty.call(evalData, '综合评分')) {
+      document.getElementById('evalScore').textContent = evalData.综合评分 + '分';
+      document.getElementById('evalDetail').innerHTML = `
+        <div class="eval-item"><span class="eval-label">辨病准确度</span><span class="eval-value">${escHtml(String(evalData['辨病准确度']||'--'))}分</span></div>
+        <div class="eval-item"><span class="eval-label">平脉分析度</span><span class="eval-value">${escHtml(String(evalData['平脉分析度']||'--'))}分</span></div>
+        <div class="eval-item"><span class="eval-label">析证清晰度</span><span class="eval-value">${escHtml(String(evalData['析证清晰度']||'--'))}分</span></div>
+        <div class="eval-item"><span class="eval-label">定治合理性</span><span class="eval-value">${escHtml(String(evalData['定治合理性']||'--'))}分</span></div>
+        <div class="eval-item"><span class="eval-label">框架完整度</span><span class="eval-value">${escHtml(String(evalData['框架完整度']||'--'))}分</span></div>
+        <div class="eval-item"><span class="eval-label">思辨能力等级</span><span class="eval-value">${escHtml(String(evalData['思辨能力等级']||'--'))}</span></div>
+      `;
+      document.getElementById('evalText').innerHTML = `
+        <strong>优点：</strong>${escHtml(String(evalData['优点']||'--'))}<br><br>
+        <strong>改进建议：</strong>${escHtml(String(evalData['改进建议']||'--'))}
+      `;
+    } else {
+      document.getElementById('evalScore').textContent = data.score || '--';
+      document.getElementById('evalDetail').innerHTML = '';
+      document.getElementById('evalText').textContent = data.evaluation || '评价生成中…';
+    }
+
+    const safety = data.safety_feedback;
+    const safetyReview = document.getElementById('safetyReview');
+    if (safety) {
+      const palette = {
+        critical: ['#fff0f0', '#c0392b'],
+        warning: ['#fff8e7', '#a66a00'],
+        pass: ['#eff8ef', '#2d7a3e'],
+        info: ['#f1f5fb', '#40658c']
+      };
+      const [background, color] = palette[safety.level] || palette.info;
+      safetyReview.style.display = 'block';
+      safetyReview.style.background = background;
+      safetyReview.style.borderColor = color;
+      document.getElementById('safetyReviewTitle').textContent = safety.title || '治疗方案复盘';
+      document.getElementById('safetyReviewTitle').style.color = color;
+      document.getElementById('safetyReviewSummary').textContent = safety.summary || '';
+      const details = Array.isArray(safety.details) ? safety.details : [];
+      document.getElementById('safetyReviewDetails').innerHTML = details
+        .map(item => `<li>${escHtml(String(item))}</li>`).join('');
+    } else {
+      safetyReview.style.display = 'none';
+    }
+    
+    // 显示相关经典条文
+    if (data.related_texts && data.related_texts.length > 0) {
+      document.getElementById('relatedTexts').style.display = 'block';
+      let html = '';
+      data.related_texts.forEach((t, i) => {
+        html += `<div style="background:#faf7f0;padding:10px 14px;border-radius:8px;margin-bottom:8px;border-left:3px solid #8b5a2b;">
+          <div style="font-size:12px;color:#8a7a6a;margin-bottom:4px;">${escHtml(t.source_book)} · ${escHtml(t.chapter)}</div>
+          <div style="font-size:14px;line-height:1.7;color:#3d2b1f;">${escHtml(t.content)}</div>
+        </div>`;
+      });
+      document.getElementById('relatedTextsContent').innerHTML = html;
+    } else {
+      document.getElementById('relatedTexts').style.display = 'none';
+    }
+    
+    document.getElementById('evalModal').classList.add('show');
+    
+  } catch(e) {
+    addMessage('system', '评价失败: ' + e.message);
+  }
+}
+
+function closeEval() {
+  document.getElementById('evalModal').classList.remove('show');
+}
+
+// ===== UI 工具 =====
+function addMessage(role, content, type) {
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  
+  if (type && role === 'agent') {
+    const tag = document.createElement('span');
+    tag.className = 'type-tag ' + type;
+    const labels = { hint:'提示', praise:'肯定', correction:'纠错', evaluation:'评价', question:'提问' };
+    tag.textContent = labels[type] || type;
+    div.appendChild(tag);
+    div.appendChild(document.createElement('br'));
+  }
+  
+  div.appendChild(document.createTextNode(content));
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function showLoading() {
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'loading';
+  div.id = 'loadingIndicator';
+  div.innerHTML = '智能体思考中 <span class="dots"><span></span><span></span><span></span></span>';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeLoading() {
+  const el = document.getElementById('loadingIndicator');
+  if (el) el.remove();
+}
+
+function updateProgress(p) {
+  progress = p;
+  const steps = { step1:'辨病', step2:'平脉', step3:'析证', step4:'定治' };
+  const activeStage = p.current_stage || '辨病';
+  
+  Object.entries(steps).forEach(([id, label]) => {
+    const el = document.getElementById(id);
+    el.classList.remove('active', 'done');
+    if (p[label] && !p[Object.keys(steps).find(k => steps[k] === activeStage)]) {
+      // 已完成但非当前阶段 = done（这里简化处理）
+      if (p[label]) el.classList.add('done');
+    }
+    if (label === activeStage) el.classList.add('active');
+  });
+  
+  // 简化：已完成的标done，当前的标active
+  Object.entries(steps).forEach(([id, label]) => {
+    const el = document.getElementById(id);
+    if (p[label]) { el.classList.remove('active'); el.classList.add('done'); }
+  });
+  
+  // 当前阶段标active（如果未done）
+  const activeStepId = Object.entries(steps).find(([_,l]) => l === activeStage);
+  if (activeStepId) {
+    const el = document.getElementById(activeStepId[0]);
+    if (!el.classList.contains('done')) el.classList.add('active');
+  }
+}
+
+function resetAll() {
+  sessionId = null;
+  sessionToken = null;
+  sessionActive = false;
+  clearActiveSession();
+  progress = {};
+  document.getElementById('welcomeScreen').style.display = 'flex';
+  document.getElementById('sessionInfo').style.display = 'none';
+  document.getElementById('progressSection').style.display = 'none';
+  document.getElementById('endSection').style.display = 'none';
+  document.getElementById('chatMessages').innerHTML = `
+    <div class="welcome" id="welcomeScreen">
+      <div class="icon" aria-hidden="true">辨</div>
+      <h2>《金匮要略》临床思辨训练</h2>
+      <p>选择训练难度后点击「开始训练」，你将与模拟患者进行多轮对话。请运用"病脉证并治"思维框架，完成辨病→平脉→析证→定治的全过程。</p>
+      <div class="welcome-steps" aria-hidden="true"><span>01 辨病</span><span>02 平脉</span><span>03 析证</span><span>04 定治</span></div>
+    </div>`;
+  document.getElementById('msgInput').disabled = true;
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('startBtn').textContent = '开始训练';
+  document.getElementById('infoCase').textContent = '训练结束后揭晓';
+  document.getElementById('infoCase').style.color = '#b0a090';
+  document.getElementById('infoCase').style.fontStyle = 'italic';
+  document.getElementById('infoStatus').textContent = '';
+  document.querySelectorAll('.progress-step').forEach(s => s.classList.remove('active','done'));
+}
+
+function escHtml(s) { if(!s){return''} const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// ===== 用户反馈 =====
+function openFeedback() {
+  document.getElementById('fbContent').value = '';
+  document.getElementById('fbContact').value = '';
+  document.getElementById('fbCategory').value = '功能建议';
+  document.getElementById('feedbackModal').classList.add('show');
+}
+
+function closeFeedback() {
+  document.getElementById('feedbackModal').classList.remove('show');
+}
+
+async function submitFeedback() {
+  const category = document.getElementById('fbCategory').value;
+  const content = document.getElementById('fbContent').value.trim();
+  const contact = document.getElementById('fbContact').value.trim();
+
+  if (!content || content.length < 5) {
+    alert('反馈内容不少于5个字');
+    return;
+  }
+
+  try {
+    const body = { category, content };
+    if (contact) body.contact = contact;
+    if (sessionId) body.session_id = sessionId;
+
+    const resp = await fetch('/api/feedback/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || '提交失败');
+    }
+
+    const result = await resp.json();
+    alert(result.message || '感谢你的反馈！');
+    closeFeedback();
+  } catch (e) {
+    alert('提交反馈失败: ' + e.message);
+  }
+}
+</script>
+
+</body>
+</html>

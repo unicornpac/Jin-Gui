@@ -1,0 +1,41 @@
+# Python虚拟环境
+.venv/
+
+# Python缓存
+__pycache__/
+*.pyc
+*.pyo
+.coverage
+
+# 环境变量（含API密钥）
+.env
+
+# 数据库文件一律不入库（本地库由 tools/backup_local.py 备份，
+# 需要空库时由首次启动的 Alembic 迁移自动创建）
+*.db
+backend/data/tcm.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+backups/
+
+# Runtime uploads live under DATA_DIR and must not be versioned.
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# 本地临时产物（审计工作区、渲染输出、备份），不入库
+.codex_tmp/
+output/
+
+# 本地写作草稿（不入库）
+*说明书_草稿.md
+
+# 运行时日志（不入库）
+*.log
+
+# 本地一次性体检/探测脚本（不入库）
+maas_check.py
+tools/probe_*.py
