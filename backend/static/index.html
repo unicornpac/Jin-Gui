@@ -85,6 +85,26 @@ tr:hover td { background:var(--hover); }
   overflow-y:auto; padding:24px; box-shadow:0 8px 32px rgba(0,0,0,.2);
 }
 .modal h3 { color:#5c3d2e; margin-bottom:14px; font-size:18px; }
+
+/* 病案要点编辑器 */
+.modal.modal-wide { max-width:1060px; }
+.ce-section { margin-top:18px; border-top:1px solid var(--border); padding-top:14px; }
+.ce-section-head { display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+.ce-section-head strong { font-size:14px; color:#5c3d2e; white-space:nowrap; }
+.ce-hint { font-size:12px; color:var(--muted); flex:1; min-width:180px; line-height:1.5; }
+.ce-table { width:100%; border-collapse:collapse; font-size:13px; }
+.ce-table th { text-align:left; font-weight:500; color:var(--muted); font-size:12px;
+  padding:4px 6px; border-bottom:1px solid var(--border); white-space:nowrap; }
+.ce-table td { padding:4px 6px; border-bottom:1px dashed var(--border); vertical-align:middle; }
+.ce-table input:not([type=checkbox]), .ce-table select {
+  width:100%; padding:5px 7px; border:1px solid var(--border); border-radius:6px;
+  font-size:13px; font-family:inherit; background:#fff; color:#3d2b1f;
+}
+.ce-table input:focus, .ce-table select:focus { outline:none; border-color:var(--primary); }
+.ce-table input[type=checkbox] { width:auto; cursor:pointer; }
+.ce-empty { text-align:center; color:var(--muted); padding:14px; font-size:12px; }
+.ce-summary { font-size:12px; color:var(--muted); margin-top:10px; line-height:1.8; }
+.ce-summary b { color:#5c3d2e; }
 .chat-replay { background:#faf7f0; border-radius:10px; padding:14px; max-height:400px; overflow-y:auto; }
 .chat-replay .rpl { margin-bottom:10px; padding:8px 12px; border-radius:8px; line-height:1.5; font-size:14px; }
 .chat-replay .rpl-student { background:var(--primary); color:#fff; margin-left:30px; }
@@ -174,6 +194,9 @@ tr:hover td { background:var(--hover); }
         <div class="form-row"><label>教学要点</label><input id="cTeach" class="form-input"></div>
       </div>
       <button class="btn btn-primary" onclick="createCase()">保存病案</button>
+      <div style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6;">
+        问诊要点与评分要点在保存后点「编辑」配置。未配置评分要点的病案仍走模型自由评分。
+      </div>
     </div>
     <div class="card">
       <div class="filters">
@@ -286,7 +309,7 @@ tr:hover td { background:var(--hover); }
 
 <!-- 编辑病案弹窗 -->
 <div class="modal-overlay" id="caseEditModal">
-  <div class="modal">
+  <div class="modal modal-wide">
     <h3>编辑病案</h3>
     <div class="form-row"><label>标题</label><input id="ceTitle" class="form-input"></div>
     <div class="form-row"><label>病案内容</label><textarea id="ceContent" class="form-input" rows="5"></textarea></div>
@@ -296,7 +319,47 @@ tr:hover td { background:var(--hover); }
       <div class="form-row"><label>难度</label><select id="ceDiff" class="form-input"><option value="初级">初级</option><option value="中级">中级</option><option value="高级">高级</option></select></div>
       <div class="form-row"><label>教学要点</label><input id="ceTeach" class="form-input"></div>
     </div>
-    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px;">
+
+    <div class="ce-section">
+      <div class="ce-section-head">
+        <strong>问诊要点</strong>
+        <span class="ce-hint">用于统计「学生问到了哪些关键信息」，不参与主分。留空则该病案不统计完整度。</span>
+        <button class="btn btn-view btn-sm" onclick="addKeyFactRow()">+ 添加一条</button>
+      </div>
+      <table class="ce-table">
+        <thead><tr>
+          <th style="width:20%">标签</th>
+          <th style="width:8%">必问</th>
+          <th>匹配关键词（逗号分隔）</th>
+          <th style="width:14%">起始难度</th>
+          <th style="width:46px"></th>
+        </tr></thead>
+        <tbody id="ceKeyFactRows"></tbody>
+      </table>
+    </div>
+
+    <div class="ce-section">
+      <div class="ce-section-head">
+        <strong>评分要点</strong>
+        <span class="ce-hint">学生原话命中关键词即得分；「起始难度」决定从哪一档开始计入，初级学生不会被高级要点扣分。</span>
+        <button class="btn btn-view btn-sm" onclick="addScorePointRow()">+ 添加一条</button>
+      </div>
+      <table class="ce-table">
+        <thead><tr>
+          <th style="width:9%">阶段</th>
+          <th>要点描述</th>
+          <th style="width:9%">权重</th>
+          <th style="width:23%">关键词</th>
+          <th style="width:11%">起始难度</th>
+          <th style="width:9%" title="勾选后不接受语义复核，只认关键词命中。方剂名、方义、是否做了鉴别建议勾上">只认字面</th>
+          <th style="width:46px"></th>
+        </tr></thead>
+        <tbody id="ceScorePointRows"></tbody>
+      </table>
+      <div class="ce-summary" id="ceScoreSummary"></div>
+    </div>
+
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px;">
       <button class="btn btn-del btn-sm" onclick="document.getElementById('caseEditModal').classList.remove('show')">取消</button>
       <button class="btn btn-primary btn-sm" onclick="saveCaseEdit()">保存</button>
     </div>
@@ -494,6 +557,108 @@ async function loadCases() {
   } catch(e) { document.getElementById('caseTbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#c0392b;padding:30px;">加载失败</td></tr>'; }
 }
 
+// === 病案要点编辑（key_facts / scoring_points） ===
+const CE_LEVELS = ['初级', '中级', '高级'];
+const CE_STAGES = ['辨病', '平脉', '析证', '定治'];
+const CE_ORDER = { 初级: 1, 中级: 2, 高级: 3 };
+let ceKeyFacts = [];
+let ceScorePoints = [];
+
+function ceNormalizeList(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+  return [];
+}
+
+function ceLevelOptions(current) {
+  return CE_LEVELS.map(l =>
+    `<option value="${l}"${l === current ? ' selected' : ''}>${l}</option>`).join('');
+}
+
+function ceBindRow(tr, data, store) {
+  tr.querySelectorAll('[data-field]').forEach(el => {
+    el.addEventListener('input', () => {
+      const field = el.dataset.field;
+      if (el.type === 'checkbox') data[field] = el.checked;
+      else if (field === 'keywords') data.keywords = el.value.split(/[,，、\s]+/).filter(Boolean);
+      else if (field === 'weight') data.weight = Number(el.value) || 0;
+      else data[field] = el.value;
+      ceUpdateSummary();
+    });
+  });
+  const del = tr.querySelector('.ce-del');
+  if (del) {
+    del.addEventListener('click', () => {
+      tr.remove();
+      const index = store.indexOf(data);
+      if (index >= 0) store.splice(index, 1);
+      ceUpdateSummary();
+    });
+  }
+}
+
+function addKeyFactRow(item) {
+  const data = Object.assign(
+    { label: '', must_ask: true, min_level: '初级', keywords: [] }, item || {});
+  ceKeyFacts.push(data);
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input data-field="label" value="${escapeHtml(data.label || '')}" placeholder="如：口苦口干"></td>
+    <td style="text-align:center"><input type="checkbox" data-field="must_ask"${data.must_ask ? ' checked' : ''}></td>
+    <td><input data-field="keywords" value="${escapeHtml((data.keywords || []).join('，'))}" placeholder="口苦，口干"></td>
+    <td><select data-field="min_level">${ceLevelOptions(data.min_level)}</select></td>
+    <td><button class="btn btn-del btn-sm ce-del" title="删除这一行">删</button></td>`;
+  ceBindRow(tr, data, ceKeyFacts);
+  document.getElementById('ceKeyFactRows').appendChild(tr);
+  ceUpdateSummary();
+}
+
+function addScorePointRow(item) {
+  const data = Object.assign(
+    { stage: '辨病', text: '', weight: 10, min_level: '初级', keywords: [], strict: false },
+    item || {});
+  ceScorePoints.push(data);
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><select data-field="stage">${CE_STAGES.map(s =>
+      `<option value="${s}"${s === data.stage ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
+    <td><input data-field="text" value="${escapeHtml(data.text || '')}" placeholder="如：辨为少阳枢机不利"></td>
+    <td><input data-field="weight" type="number" min="0" step="5" value="${Number(data.weight) || 0}"></td>
+    <td><input data-field="keywords" value="${escapeHtml((data.keywords || []).join('，'))}" placeholder="少阳，枢机"></td>
+    <td><select data-field="min_level">${ceLevelOptions(data.min_level)}</select></td>
+    <td style="text-align:center"><input type="checkbox" data-field="strict"${data.strict ? ' checked' : ''} title="勾选后不接受语义复核，只认关键词命中"></td>
+    <td><button class="btn btn-del btn-sm ce-del" title="删除这一行">删</button></td>`;
+  ceBindRow(tr, data, ceScorePoints);
+  document.getElementById('ceScorePointRows').appendChild(tr);
+  ceUpdateSummary();
+}
+
+function ceUpdateSummary() {
+  const totals = { 初级: 0, 中级: 0, 高级: 0 };
+  ceScorePoints.forEach(p => {
+    const level = p.min_level || '初级';
+    const weight = Number(p.weight) || 0;
+    CE_LEVELS.forEach(current => {
+      if ((CE_ORDER[level] || 1) <= (CE_ORDER[current] || 1)) totals[current] += weight;
+    });
+  });
+  const el = document.getElementById('ceScoreSummary');
+  if (!el) return;
+  if (!ceScorePoints.length) {
+    el.innerHTML = '尚未配置评分要点：该病案仍按模型自由评分（旧算法）。';
+    return;
+  }
+  const must = ceKeyFacts.filter(f => f.must_ask).length;
+  el.innerHTML = `${ceScorePoints.length} 条要点，累计满分　`
+    + `初级 <b>${totals.初级}</b>　中级 <b>${totals.中级}</b>　高级 <b>${totals.高级}</b>`
+    + `　·　问诊要点 ${ceKeyFacts.length} 条（必问 ${must} 条）`;
+}
+
 async function editCase(id) {
   const c = await (await fetch(`${API}/cases/admin/${id}`)).json();
   editingCaseId = id;
@@ -503,6 +668,15 @@ async function editCase(id) {
   document.getElementById('cePresc').value = c.prescription||'';
   document.getElementById('ceDiff').value = c.difficulty_level||'初级';
   document.getElementById('ceTeach').value = c.teaching_points||'';
+
+  ceKeyFacts = [];
+  ceScorePoints = [];
+  document.getElementById('ceKeyFactRows').innerHTML = '';
+  document.getElementById('ceScorePointRows').innerHTML = '';
+  // 保留 id 等自带字段，只覆盖用户能编辑的部分
+  ceNormalizeList(c.key_facts).forEach(item => addKeyFactRow(Object.assign({}, item || {})));
+  ceNormalizeList(c.scoring_points).forEach(item => addScorePointRow(Object.assign({}, item || {})));
+  ceUpdateSummary();
   document.getElementById('caseEditModal').classList.add('show');
 }
 
@@ -514,13 +688,40 @@ async function saveCaseEdit() {
     diagnosis: document.getElementById('ceDiag').value,
     prescription: document.getElementById('cePresc').value,
     difficulty_level: document.getElementById('ceDiff').value,
-    teaching_points: document.getElementById('ceTeach').value
+    teaching_points: document.getElementById('ceTeach').value,
+    key_facts: ceKeyFacts
+      .filter(f => String(f.label || '').trim())
+      .map(f => {
+        const item = {
+          label: String(f.label).trim(),
+          must_ask: !!f.must_ask,
+          min_level: f.min_level || '初级',
+          keywords: f.keywords || []
+        };
+        if (f.id) item.id = f.id;
+        return item;
+      }),
+    scoring_points: ceScorePoints
+      .filter(p => String(p.text || '').trim() && Number(p.weight) > 0)
+      .map(p => ({
+        stage: p.stage || '辨病',
+        text: String(p.text).trim(),
+        weight: Number(p.weight),
+        min_level: p.min_level || '初级',
+        keywords: p.keywords || [],
+        strict: !!p.strict
+      }))
   };
   try {
-    await fetch(`${API}/cases/${editingCaseId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const resp = await fetch(`${API}/cases/${editingCaseId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || ('HTTP ' + resp.status));
     document.getElementById('caseEditModal').classList.remove('show');
-    toast('保存成功','success'); loadCases();
-  } catch(e) { toast('保存失败: '+e.message,'error'); }
+    toast(`保存成功（评分要点 ${data.scoring_points.length} 条）`, 'success');
+    loadCases();
+  } catch(e) { toast('保存失败: ' + e.message, 'error'); }
 }
 
 // === 手动录入条文 ===
