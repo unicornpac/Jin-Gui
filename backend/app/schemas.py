@@ -85,6 +85,12 @@ class MedicalCaseBase(BaseModel):
     examinations: Optional[dict] = Field(
         None, description="可检查的客观体征（脉/舌/腹/面/咽），训练中由诊法直出返回"
     )
+    key_facts: Optional[List[dict]] = Field(
+        None, description="问诊要点，用于统计学生是否问到了必问项"
+    )
+    scoring_points: Optional[List[dict]] = Field(
+        None, description="评分要点，按关键词逐条对照打分，支持 min_level 按难度过滤"
+    )
 
 
 class MedicalCaseCreate(MedicalCaseBase):
@@ -101,6 +107,8 @@ class MedicalCaseUpdate(BaseModel):
     teaching_points: Optional[str] = None
     correct_answer: Optional[str] = None
     examinations: Optional[dict] = None
+    key_facts: Optional[List[dict]] = None
+    scoring_points: Optional[List[dict]] = None
 
 
 class MedicalCaseResponse(MedicalCaseBase):
@@ -187,6 +195,7 @@ class SessionStartResponse(BaseModel):
         ...,
         description="会话归属令牌。后续 /message 与 /evaluate 必须通过 X-Session-Token 请求头回传",
     )
+    guidance: Optional[dict] = Field(None, description="开始后的第一步提示")
 
 
 class SessionMessageRequest(BaseModel):
@@ -231,6 +240,10 @@ class SessionEvaluateResponse(BaseModel):
     case_correct_answer: Optional[str] = Field(None, description="参考答案（训练结束后揭晓）")
     related_texts: Optional[List[dict]] = Field(None, description="相关经典条文（含出处和原文）")
     safety_feedback: Optional[dict] = Field(None, description="训练用药安全复盘（非真实诊疗建议）")
+    scoring: Optional[dict] = Field(
+        None,
+        description="结构化要点得分：逐条命中情况、分阶段小计、问诊完整度；病案未配要点时为 null",
+    )
 
 
 class PublicStatsResponse(BaseModel):

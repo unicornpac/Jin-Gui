@@ -142,6 +142,25 @@ body {
 .modal .eval-text { background:#faf7f0; padding:14px; border-radius:8px; margin:10px 0; line-height:1.7; font-size:14px; }
 .modal .btn-row { display:flex; gap:10px; margin-top:16px; }
 
+/* 要点得分明细 */
+.scoring-stage { margin-bottom:10px; }
+.scoring-stage-head {
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-size:13px; font-weight:600; color:#5c3d2e;
+  padding-bottom:4px; border-bottom:1px dashed #e8dcc8; margin-bottom:6px;
+}
+.scoring-stage-head span { font-weight:400; color:#8a7a6a; font-size:12px; }
+.scoring-point { display:flex; gap:8px; align-items:flex-start; font-size:13px; line-height:1.6; padding:2px 0; }
+.scoring-point .mark { flex:0 0 14px; font-weight:700; }
+.scoring-point .txt { flex:1; }
+.scoring-point .w { flex:0 0 auto; color:#b0a090; font-size:12px; }
+.scoring-point.hit .mark { color:#2d7a3e; }
+.scoring-point.hit .txt { color:#3d2b1f; }
+.scoring-point.miss .mark { color:#c0392b; }
+.scoring-point.miss .txt { color:#8a7a6a; }
+.scoring-point.skip .mark { color:#b0a090; }
+.scoring-point.skip .txt { color:#b0a090; font-style:italic; }
+
 /* 加载动画 */
 .loading { display:flex; align-items:center; gap:8px; color:#b0a090; padding:8px 16px; }
 .loading .dots { display:flex; gap:4px; }
@@ -156,6 +175,18 @@ body {
   font-size:14px; background:#fff; color:#3d2b1f; }
 .stud-input:focus { outline:none; border-color:#8b5a2b; }
 .stud-hint { font-size:11px; color:#b0a090; margin-top:6px; line-height:1.5; }
+/* 分阶段引导 */
+.guidance-line { padding:8px 20px 4px; font-size:12.5px; color:#8a7a6a; min-height:20px;
+  display:flex; align-items:center; gap:6px; }
+.guidance-line .tag { flex:none; background:#f0e2cc; color:#8b5a2b; border-radius:4px;
+  padding:1px 7px; font-size:11px; }
+.progress-step.todo { opacity:.45; }
+.progress-step.muted { opacity:.28; }
+.progress-step.muted .dot { border-style:dotted; }
+.progress-meta { font-size:11.5px; color:#8a7a6a; margin-top:8px; line-height:1.6; }
+.system-hint { align-self:center; max-width:82%; margin:8px auto; padding:5px 14px;
+  border-radius:12px; background:#f2ead9; color:#8a7a6a; font-size:12px;
+  text-align:center; line-height:1.6; }
 </style>
 <link rel="stylesheet" href="/static/jingui-theme.css?v=20260805">
 <script src="/static/jingui-motion.js?v=20260805" defer></script>
@@ -227,6 +258,7 @@ body {
         <div class="progress-step" id="step3"><span class="dot"></span>析证</div>
         <div class="progress-step" id="step4"><span class="dot"></span>定治</div>
       </div>
+      <div class="progress-meta" id="progressMeta"></div>
     </div>
 
     <div class="section" id="endSection" style="display:none">
@@ -248,6 +280,7 @@ body {
         <div class="welcome-steps" aria-hidden="true"><span>01 辨病</span><span>02 平脉</span><span>03 析证</span><span>04 定治</span></div>
       </div>
     </div>
+    <div class="guidance-line" id="guidanceLine"></div>
     <div class="chat-input">
       <textarea id="msgInput" placeholder="请输入你的问诊或辨证内容…" rows="1" disabled
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
@@ -263,6 +296,14 @@ body {
     <div class="eval-score" id="evalScore">--</div>
     <div class="eval-detail" id="evalDetail"></div>
     <div class="eval-text" id="evalText"></div>
+    <div id="scoringPanel" style="display:none;margin:14px 0;border:1px solid #e0d5c0;border-radius:10px;padding:14px;background:#fcfaf5;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+        <h4 style="margin:0;color:#5c3d2e;">要点得分</h4>
+        <span id="scoringSummary" style="font-size:13px;color:#8a7a6a;"></span>
+      </div>
+      <div id="scoringStages"></div>
+      <div id="scoringFacts" style="font-size:13px;color:#8a7a6a;margin-top:10px;line-height:1.7;"></div>
+    </div>
     <div id="safetyReview" style="display:none;border-radius:10px;padding:14px;margin:14px 0;border:1px solid #d9c4a7;background:#faf7f0;">
       <h4 id="safetyReviewTitle" style="margin:0 0 8px;"></h4>
       <div id="safetyReviewSummary" style="font-size:14px;line-height:1.7;"></div>
@@ -330,6 +371,7 @@ let progress = {};
 const LS_STUDENT = 'jingui_student_id';
 const LS_SESSION = 'jingui_active_session';
 let pendingResume = null;
+let lastGuidanceStage = null;
 
 function currentStudentId() {
   const el = document.getElementById('studentId');
@@ -418,6 +460,8 @@ async function resumeSession() {
     else addMessage('system', m.content, m.message_type);
   });
   document.getElementById('resumeSection').style.display = 'none';
+  lastGuidanceStage = null;
+  addSystemHint('已恢复上次训练，可继续问诊或分析');
   document.getElementById('msgInput').focus();
 }
 
@@ -485,6 +529,8 @@ async function startSession() {
     // 显示开场白
     addMessage('agent', data.agent_message, 'question');
     updateProgress({辨病:false, 平脉:false, 析证:false, 定治:false});
+    lastGuidanceStage = null;
+    updateGuidance(data.guidance);
     
   } catch(e) {
     alert('启动训练失败: ' + e.message);
@@ -520,11 +566,16 @@ async function sendMessage() {
     addMessage('agent', data.agent_message, data.message_type);
     if (data.progress) {
       updateProgress(data.progress);
+      if (data.progress.guidance) updateGuidance(data.progress.guidance);
     }
     
     if (data.session_status === 'completed') {
       sessionActive = false;
-      addMessage('system', '对话已达上限，建议点击左侧「结束训练 & 查看评价」获取报告。');
+      const guide = data.progress && data.progress.guidance;
+      const allDone = !!guide && guide.stage === 'done';
+      addMessage('system', allDone
+        ? '四个阶段都走完了，建议点击左侧「结束训练 & 查看评价」获取报告。'
+        : '本次训练已到轮次上限，建议点击左侧「结束训练 & 查看评价」获取报告。');
       document.getElementById('infoStatus').textContent = '建议评价';
     }
     
@@ -629,6 +680,8 @@ async function evaluateSession() {
       document.getElementById('relatedTexts').style.display = 'none';
     }
     
+    renderScoring(data.scoring);
+
     document.getElementById('evalModal').classList.add('show');
     
   } catch(e) {
@@ -638,6 +691,68 @@ async function evaluateSession() {
 
 function closeEval() {
   document.getElementById('evalModal').classList.remove('show');
+}
+
+// ===== 要点得分明细 =====
+function fmtPoint(value) {
+  const n = Math.round((Number(value) || 0) * 10) / 10;
+  return String(n);
+}
+
+function renderScoring(scoring) {
+  const panel = document.getElementById('scoringPanel');
+  if (!scoring || !scoring.gradable) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  document.getElementById('scoringSummary').textContent =
+    `${fmtPoint(scoring.percent)} 分（${fmtPoint(scoring.total)}/${fmtPoint(scoring.max)} 要点）· ${scoring.level}`;
+
+  const order = ['辨病', '平脉', '析证', '定治'];
+  const groups = {};
+  (scoring.points || []).forEach(p => {
+    const stage = p.stage || '其他';
+    (groups[stage] = groups[stage] || []).push(p);
+  });
+  const stages = order.concat(Object.keys(groups).filter(s => order.indexOf(s) < 0));
+
+  let html = '';
+  stages.forEach(stage => {
+    const list = groups[stage];
+    if (!list || !list.length) return;
+    const sub = (scoring.by_stage || {})[stage];
+    const head = sub ? `<span>${fmtPoint(sub.total)}/${fmtPoint(sub.max)}</span>` : '';
+    html += `<div class="scoring-stage"><div class="scoring-stage-head">`
+      + `<span style="font-weight:600;">${escHtml(stage)}</span>${head}</div>`;
+    list.forEach(p => {
+      const cls = p.hit === true ? 'hit' : (p.hit === false ? 'miss' : 'skip');
+      const mark = p.hit === true ? '✓' : (p.hit === false ? '✗' : '·');
+      html += `<div class="scoring-point ${cls}">`
+        + `<span class="mark">${mark}</span>`
+        + `<span class="txt">${escHtml(p.text || '')}</span>`
+        + `<span class="w">${fmtPoint(p.weight)}</span></div>`;
+    });
+    html += '</div>';
+  });
+  document.getElementById('scoringStages').innerHTML = html;
+
+  const factsEl = document.getElementById('scoringFacts');
+  const facts = scoring.key_facts;
+  const lines = [];
+  if (facts && facts.total) {
+    const revealed = facts.revealed || 0;
+    const covered = (facts.asked || 0) + revealed;
+    let line = `关键信息 ${covered}/${facts.total}`;
+    if (revealed) line += `（其中 ${revealed} 项患者已主动交代）`;
+    if (facts.missing && facts.missing.length) {
+      line += `；仍缺：${facts.missing.map(escHtml).join('、')}`;
+    }
+    lines.push(line);
+  }
+  if (scoring.excluded > 0) {
+    lines.push(`另有 ${scoring.excluded} 项要点属于更高难度，本次不计分`);
+  }
+  factsEl.innerHTML = lines.join('<br>');
+  factsEl.style.display = lines.length ? 'block' : 'none';
 }
 
 // ===== UI 工具 =====
@@ -675,40 +790,72 @@ function removeLoading() {
   if (el) el.remove();
 }
 
+function addSystemHint(text) {
+  const msgs = document.getElementById('chatMessages');
+  if (!msgs) return;
+  const div = document.createElement('div');
+  div.className = 'system-hint';
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function updateGuidance(g) {
+  if (!g) return;
+  const line = document.getElementById('guidanceLine');
+  if (!line) return;
+  line.textContent = '';
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.textContent = g.label || '';
+  line.appendChild(tag);
+  line.appendChild(document.createTextNode(g.text || ''));
+  // 阶段推进时，在聊天流里再留一条痕迹（「问诊」阶段不打扰）
+  if (lastGuidanceStage && g.stage !== lastGuidanceStage && g.stage !== 'ask') {
+    addSystemHint((g.label || '') + ' · ' + (g.text || ''));
+  }
+  lastGuidanceStage = g.stage;
+}
+
 function updateProgress(p) {
   progress = p;
-  const steps = { step1:'辨病', step2:'平脉', step3:'析证', step4:'定治' };
-  const activeStage = p.current_stage || '辨病';
-  
-  Object.entries(steps).forEach(([id, label]) => {
+  const order = [['step1', '辨病'], ['step2', '平脉'], ['step3', '析证'], ['step4', '定治']];
+  const level = p.level || (document.getElementById('infoLevel').textContent || '初级');
+  // 各档实际参与评定的阶段：初级只评辨病，中级不评定治
+  const scope = level === '初级' ? ['辨病']
+              : (level === '中级' ? ['辨病', '平脉', '析证'] : ['辨病', '平脉', '析证', '定治']);
+  // 当前阶段与引导提示同源，避免两处说法不一致
+  const stageToStep = { ask: '辨病', examine: '平脉', patho: '析证', treat: '定治', done: null };
+  const activeLabel = p.guidance ? stageToStep[p.guidance.stage] : (p.current_stage || '辨病');
+
+  order.forEach(([id, label]) => {
     const el = document.getElementById(id);
-    el.classList.remove('active', 'done');
-    if (p[label] && !p[Object.keys(steps).find(k => steps[k] === activeStage)]) {
-      // 已完成但非当前阶段 = done（这里简化处理）
-      if (p[label]) el.classList.add('done');
-    }
-    if (label === activeStage) el.classList.add('active');
+    if (!el) return;
+    el.classList.remove('done', 'active', 'todo', 'muted');
+    if (p[label]) { el.classList.add('done'); return; }
+    if (!scope.includes(label)) { el.classList.add('muted'); return; }
+    if (label === activeLabel) { el.classList.add('active'); return; }
+    el.classList.add('todo');
   });
-  
-  // 简化：已完成的标done，当前的标active
-  Object.entries(steps).forEach(([id, label]) => {
-    const el = document.getElementById(id);
-    if (p[label]) { el.classList.remove('active'); el.classList.add('done'); }
-  });
-  
-  // 当前阶段标active（如果未done）
-  const activeStepId = Object.entries(steps).find(([_,l]) => l === activeStage);
-  if (activeStepId) {
-    const el = document.getElementById(activeStepId[0]);
-    if (!el.classList.contains('done')) el.classList.add('active');
+
+  const meta = document.getElementById('progressMeta');
+  if (meta) {
+    const labelMap = { pulse: '脉', tongue: '舌', abdomen: '腹', face: '面', throat: '咽' };
+    const exams = (p.examinations_done || []).map(k => labelMap[k] || k);
+    const turns = p.student_turns != null ? p.student_turns : 0;
+    meta.textContent = `问诊 ${turns} 轮` + (exams.length ? ` · 已取 ${exams.join('、')}` : '');
   }
 }
+
 
 function resetAll() {
   sessionId = null;
   sessionToken = null;
   sessionActive = false;
   clearActiveSession();
+  lastGuidanceStage = null;
+  const gl = document.getElementById('guidanceLine');
+  if (gl) gl.textContent = '';
   progress = {};
   document.getElementById('welcomeScreen').style.display = 'flex';
   document.getElementById('sessionInfo').style.display = 'none';

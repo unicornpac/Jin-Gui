@@ -29,6 +29,7 @@ from ..schemas import (
 )
 from ..services.agent_service import get_agent, TrainingAgent
 from ..services.session_token import issue_session_token, verify_session_token
+from ..services.guidance import build_guidance
 
 router = APIRouter()
 
@@ -90,6 +91,12 @@ def start_session(
             case_title=session.case.title if session.case else "未知病案",
             agent_message=opening,
             session_token=issue_session_token(session.id),
+            guidance=build_guidance(
+                session.difficulty_level,
+                {"辨病": False, "平脉": False, "析证": False, "定治": False},
+                [],
+                0,
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -212,7 +219,9 @@ def evaluate_session(
         return SessionEvaluateResponse(
             session_id=session.id,
             score=session.score or "未评分",
-            evaluation=session.decision_path or "",
+            # 评价报告此前没有落库，重复打开时会拿 decision_path 顶替；
+            # 旧数据没有 evaluation 字段，仍回退到 decision_path 保持可读
+            evaluation=session.evaluation or session.decision_path or "",
             decision_path=session.decision_path or "",
             case_title=case.title if case else None,
             case_correct_answer=case.correct_answer if case else None,
@@ -220,6 +229,7 @@ def evaluate_session(
             safety_feedback=assess_treatment_safety(
                 messages, case.prescription if case else None
             ),
+            scoring=session.scoring,
         )
     
     try:
@@ -233,6 +243,7 @@ def evaluate_session(
             case_correct_answer=case.correct_answer if case else None,
             related_texts=result.get("related_texts", []),
             safety_feedback=result.get("safety_feedback"),
+            scoring=result.get("scoring"),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

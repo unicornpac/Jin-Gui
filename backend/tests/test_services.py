@@ -307,59 +307,57 @@ class TestAnalyzeProgress:
         assert progress["辨病"] is True
         assert progress["current_stage"] == "主证识别"
 
-    def test_intermediate_disease_then_pulse_then_treatment(self, agent, intermediate_session):
+    def test_intermediate_flow_requires_examination(self, agent, intermediate_session):
         base = [
             {"role": "user", "content": "你哪里不舒服"},
             {"role": "user", "content": "这是胸痹吧"},
         ]
-        progress_before = agent._analyze_progress(base, intermediate_session)
-        assert progress_before["辨病"] is True and progress_before["平脉"] is False
+        p1 = agent._analyze_progress(base, intermediate_session)
+        assert p1["辨病"] is True
+        assert p1["平脉"] is False, "没有做切诊不能算平脉完成"
 
+        # 完成切诊后，平脉才算完成
+        intermediate_session.examinations_done = ["pulse"]
         history = base + [{"role": "user", "content": "脉沉迟"}]
-        progress = agent._analyze_progress(history, intermediate_session)
-        assert progress["辨病"] is True
-        assert progress["平脉"] is True
-        assert progress["current_stage"] == "析证"
+        p2 = agent._analyze_progress(history, intermediate_session)
+        assert p2["平脉"] is True
+        assert p2["析证"] is False, "只提脉象、没有病机与鉴别，不算析证"
 
-        full = history + [{"role": "user", "content": "栝楼薤白白酒汤"}]
-        progress = agent._analyze_progress(
-            full, intermediate_session, treatment_assessment={"matches_expected": True}
-        )
-        assert progress["析证"] is True
+        # 说出病机并给出一组鉴别 → 析证完成
+        full = history + [{
+            "role": "user",
+            "content": "上焦阳虚、痰浊闭阻，需与心痛鉴别",
+        }]
+        p3 = agent._analyze_progress(full, intermediate_session)
+        assert p3["析证"] is True
 
     def test_advanced_full_pipeline(self, agent, advanced_session):
+        advanced_session.examinations_done = ["pulse"]
         history = [
-            {"role": "user", "content": "你哪里不舒服"},
-            {"role": "user", "content": "黄疸"},
-            {"role": "user", "content": "脉弦数"},
-            {"role": "user", "content": "桂枝汤"},
+            {"role": "user", "content": "这是黄疸"},
+            {"role": "user", "content": "湿热蕴结中焦，与萎黄鉴别"},
+            {"role": "user", "content": "治当清热利湿，用茵陈蒿汤"},
         ]
-        progress = agent._analyze_progress(
-            history, advanced_session, treatment_assessment={"matches_expected": True}
-        )
+        progress = agent._analyze_progress(history, advanced_session)
 
         assert progress["辨病"] is True
         assert progress["平脉"] is True
         assert progress["析证"] is True
         assert progress["定治"] is True
-        assert progress["current_stage"] == "定治"
+        assert progress["current_stage"] == "已完成"
 
-    def test_wrong_formula_does_not_complete_treatment(self, agent, advanced_session):
+    def test_formula_without_method_does_not_complete_treatment(self, agent, advanced_session):
+        """定治要求「治法 + 方剂」；只说方名不算形成方案。"""
+        advanced_session.examinations_done = ["pulse"]
         history = [
-            {"role": "user", "content": "你哪里不舒服"},
-            {"role": "user", "content": "黄疸"},
-            {"role": "user", "content": "脉弦数"},
-            {"role": "user", "content": "桂枝汤"},
+            {"role": "user", "content": "这是黄疸"},
+            {"role": "user", "content": "湿热蕴结中焦，与萎黄鉴别"},
+            {"role": "user", "content": "用桂枝汤"},
         ]
-        progress = agent._analyze_progress(
-            history,
-            advanced_session,
-            treatment_assessment={"treatment_proposed": True, "matches_expected": False},
-        )
+        progress = agent._analyze_progress(history, advanced_session)
 
-        assert progress["辨病"] is True
-        assert progress["平脉"] is True
-        assert progress["定治"] is False
+        assert progress["析证"] is True
+        assert progress["定治"] is False, "缺少治法，不应判定定治完成"
 
     def test_ai_progress_merges_as_or(self, agent, beginner_session):
         history = [
@@ -527,7 +525,7 @@ class TestExaminationDirect:
 
         assert "已获取" in reply
         assert "无需重复" in reply
-        assert msg_type == "correction"
+        assert msg_type == "hint", "重复检查应提示而非纠错"
 
     def test_missing_examination_reports_not_recorded(self, agent, db_session, active):
         reply, _, _, _ = agent.process_message(db_session, active.id, "按按肚子")
@@ -542,3 +540,525 @@ class TestExaminationDirect:
         agent.process_message(db_session, active.id, "号脉")
         db_session.refresh(active)
         assert active.examinations_done == ["pulse"]
+
+# ==================== 分阶段引导 ====================
+
+class TestGuidance:
+    """引导提示：按层级与进度给出下一步任务，且不泄露答案。"""
+
+    IDLE = {"辨病": False, "平脉": False, "析证": False, "定治": False}
+
+    def test_beginner_starts_with_ask(self):
+        from app.services.guidance import build_guidance
+        g = build_guidance("初级", dict(self.IDLE), [], 0)
+        assert g["stage"] == "ask"
+        assert "问诊" in g["text"]
+
+    def test_beginner_done_after_diagnosis(self):
+        from app.services.guidance import build_guidance
+        g = build_guidance("初级", {**self.IDLE, "辨病": True}, [], 3)
+        assert g["stage"] == "done"
+
+    def test_intermediate_asks_before_examination(self):
+        from app.services.guidance import build_guidance
+        assert build_guidance("中级", dict(self.IDLE), [], 0)["stage"] == "ask"
+        assert build_guidance("中级", dict(self.IDLE), [], 1)["stage"] == "ask"
+
+    def test_intermediate_requires_examination(self):
+        from app.services.guidance import build_guidance
+        g = build_guidance("中级", dict(self.IDLE), [], 2)
+        assert g["stage"] == "examine"
+        assert "切诊" in g["text"]
+
+    def test_after_examination_goes_straight_to_patho(self):
+        """取脉即平脉完成，提示直接进入析证（脉象含义归析证）。"""
+        from app.services.guidance import build_guidance
+        g = build_guidance("中级", {**self.IDLE, "辨病": True}, ["pulse"], 3)
+        assert g["stage"] == "patho"
+        assert "鉴别" in g["text"]
+
+    def test_advanced_requires_treatment(self):
+        from app.services.guidance import build_guidance
+        progress = {"辨病": True, "平脉": True, "析证": True, "定治": False}
+        g = build_guidance("高级", progress, ["pulse", "tongue"], 6)
+        assert g["stage"] == "treat"
+        assert "治法" in g["text"]
+
+    def test_advanced_done(self):
+        from app.services.guidance import build_guidance
+        progress = {"辨病": True, "平脉": True, "析证": True, "定治": True}
+        assert build_guidance("高级", progress, ["pulse"], 8)["stage"] == "done"
+
+    def test_guidance_never_leaks_answer(self):
+        from app.services.guidance import build_guidance
+        for level in ("初级", "中级", "高级"):
+            for turns in (0, 2, 5):
+                text = build_guidance(level, dict(self.IDLE), [], turns)["text"]
+                assert "少阳" not in text and "柴胡" not in text
+
+# ==================== 诊法识别与患者输出护栏 ====================
+
+class TestExaminationDetection:
+    """既认出「要求检查」，又不能把「解读脉象」当成检查。"""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("让我摸摸脉", "pulse"),
+        ("我摸摸你的脉", "pulse"),
+        ("我诊个脉", "pulse"),
+        ("切个脉", "pulse"),
+        ("搭搭脉", "pulse"),
+        ("脉怎么样", "pulse"),
+        ("看看脉象", "pulse"),
+        ("伸出舌头看看", "tongue"),
+        ("舌头伸出来", "tongue"),
+        ("我看看舌苔", "tongue"),
+        ("舌苔怎么样", "tongue"),
+        ("张嘴我看看", "tongue"),
+        ("按按肚子", "abdomen"),
+        ("看看面色", "face"),
+        ("看看嗓子", "throat"),
+        # 以下都是「解读体征」，不是要求检查
+        ("脉象主肝脾郁", None),
+        ("脉弦主气郁", None),
+        ("脉缓主正气不足", None),
+        ("这个脉象说明什么", None),
+        ("这个舌象反映的是什么", None),
+        ("脉浮紧说明表寒未解", None),
+        ("舌淡苔白，是虚证", None),
+        ("阴阳两虚", None),
+        ("我认为病在少阳", None),
+        ("你好", None),
+    ])
+    def test_detects_or_ignores(self, text, expected):
+        from app.services.examination import detect_examination
+        assert detect_examination(text) == expected
+
+
+class TestPatientOutputGuard:
+    """患者输出护栏：去掉评估者旁白；不确认医生的病机判断。"""
+
+    def test_strips_meta_commentary(self):
+        from app.services.agent_service import TrainingAgent
+        raw = "（医生进一步分析病机，但未提及具体方剂）嗯，您说得有道理。"
+        assert TrainingAgent._strip_meta_commentary(raw) == "嗯，您说得有道理。"
+
+    def test_keeps_examination_action(self):
+        from app.services.agent_service import TrainingAgent
+        raw = "（患者伸出手腕，你搭上寸口）脉弦缓"
+        assert TrainingAgent._strip_meta_commentary(raw) == raw
+
+    def test_flags_confirmation_of_diagnosis(self):
+        from app.services.agent_service import TrainingAgent
+        assert TrainingAgent._is_confirming_judgement(
+            "你这是少阳枢机不利", "嗯，您说得有道理。"
+        )
+        assert TrainingAgent._is_confirming_judgement(
+            "你这是阴阳两虚", "没错，就是这样。"
+        )
+
+    def test_allows_confirming_body_feeling(self):
+        """问的是身体感受时，患者可以确认。"""
+        from app.services.agent_service import TrainingAgent
+        assert not TrainingAgent._is_confirming_judgement(
+            "你胸闷吗", "对，就是这感觉。"
+        )
+        assert not TrainingAgent._is_confirming_judgement(
+            "是不是夜间加重", "是的。"
+        )
+
+    def test_hedged_reply_is_neutral(self):
+        from app.services.agent_service import TrainingAgent
+        reply = TrainingAgent._hedged_reply()
+        assert reply
+        for bad in ("说得对", "有道理", "你错了"):
+            assert bad not in reply
+
+
+# ==================== 结构化评分（P3） ====================
+
+_CASE_POINTS = [
+    {"stage": "辨病", "text": "辨为少阳枢机不利", "weight": 20,
+     "keywords": ["少阳"], "min_level": "初级"},
+    {"stage": "平脉", "text": "脉弦主少阳", "weight": 15,
+     "keywords": ["弦"], "min_level": "初级"},
+    {"stage": "析证", "text": "往来寒热属枢机不利", "weight": 25,
+     "keywords": ["枢机", "往来寒热"], "min_level": "中级"},
+    {"stage": "定治", "text": "治以和解少阳", "weight": 20,
+     "keywords": ["和解"], "min_level": "中级"},
+    {"stage": "定治", "text": "方选柴胡桂枝汤", "weight": 20,
+     "keywords": ["柴胡桂枝"], "min_level": "高级"},
+]
+
+_CASE_FACTS = [
+    {"id": "chief", "label": "主诉", "must_ask": True, "keywords": ["怕冷", "发热"]},
+    {"id": "sweat", "label": "出汗", "must_ask": True, "keywords": ["汗"]},
+    {"id": "stool", "label": "大便", "must_ask": False, "keywords": ["大便"]},
+]
+
+
+def _fake_case(**overrides):
+    from types import SimpleNamespace
+    data = {
+        "scoring_points": _CASE_POINTS,
+        "key_facts": _CASE_FACTS,
+        "prescription": "柴胡桂枝汤",
+        "title": "反复感冒",
+    }
+    data.update(overrides)
+    return SimpleNamespace(**data)
+
+
+class TestScoringLevelFilter:
+    """层级过滤：初级学生不该被高级要点扣分。"""
+
+    def test_beginner_counts_only_beginner_points(self):
+        from app.services.scoring import select_points
+        picked = select_points(_CASE_POINTS, "初级")
+        assert [p["text"] for p in picked] == ["辨为少阳枢机不利", "脉弦主少阳"]
+
+    def test_intermediate_adds_intermediate(self):
+        from app.services.scoring import select_points
+        assert len(select_points(_CASE_POINTS, "中级")) == 4
+
+    def test_advanced_counts_all(self):
+        from app.services.scoring import select_points
+        assert len(select_points(_CASE_POINTS, "高级")) == 5
+
+    def test_unknown_level_falls_back_to_beginner(self):
+        from app.services.scoring import select_points
+        assert len(select_points(_CASE_POINTS, None)) == 2
+        assert len(select_points(_CASE_POINTS, "专家")) == 2
+
+    def test_excluded_count(self):
+        from app.services.scoring import excluded_count
+        assert excluded_count(_CASE_POINTS, "初级") == 3
+        assert excluded_count(_CASE_POINTS, "高级") == 0
+
+
+class TestScoringEvaluate:
+    """逐条对照打分。"""
+
+    def test_beginner_score_normalized_within_own_pool(self):
+        """同样只说对「少阳」，初级按 35 分满分算，不会被高级要点稀释。"""
+        from app.services.scoring import evaluate_scoring
+        messages = [{"role": "user", "content": "考虑少阳枢机不利"}]
+        result = evaluate_scoring(_fake_case(), "初级", messages)
+        assert result["max"] == 35
+        assert result["total"] == 20
+        assert result["percent"] == pytest.approx(57.1, abs=0.1)
+
+    def test_advanced_same_answer_scores_lower(self):
+        from app.services.scoring import evaluate_scoring
+        messages = [{"role": "user", "content": "考虑少阳枢机不利"}]
+        result = evaluate_scoring(_fake_case(), "高级", messages)
+        assert result["max"] == 100
+        # 「少阳」命中辨病 20 分，「枢机」命中级析证 25 分，其余未答
+        assert result["percent"] == pytest.approx(45.0, abs=0.1)
+
+    def test_full_answer_scores_full_marks(self):
+        from app.services.scoring import evaluate_scoring
+        messages = [{"role": "user", "content":
+                     "辨少阳枢机不利，脉弦，病机属枢机不利、往来寒热，治以和解，方用柴胡桂枝汤"}]
+        result = evaluate_scoring(_fake_case(), "高级", messages)
+        assert result["percent"] == 100.0
+
+    def test_patient_lines_do_not_count(self):
+        """患者自己说的不算学生答对。"""
+        from app.services.scoring import evaluate_scoring
+        messages = [{"role": "assistant", "content": "大夫，我这少阳枢机不利吧"}]
+        result = evaluate_scoring(_fake_case(), "初级", messages)
+        assert result["total"] == 0
+
+    def test_point_without_keywords_is_not_graded(self):
+        from app.services.scoring import evaluate_scoring
+        case = _fake_case(scoring_points=[
+            {"stage": "辨病", "text": "无关键词要点", "weight": 30, "min_level": "初级"},
+            {"stage": "辨病", "text": "有关键词", "weight": 10,
+             "keywords": ["少阳"], "min_level": "初级"},
+        ])
+        result = evaluate_scoring(case, "初级", [{"role": "user", "content": "少阳"}])
+        assert result["max"] == 10          # 无关键词的要点不进分母
+        assert result["percent"] == 100.0
+        assert result["points"][0]["hit"] is None
+
+    def test_ungradable_when_no_point_has_keywords(self):
+        from app.services.scoring import evaluate_scoring
+        case = _fake_case(scoring_points=[
+            {"stage": "辨病", "text": "没关键词", "weight": 30},
+        ], key_facts=[])
+        result = evaluate_scoring(case, "初级", [{"role": "user", "content": "少阳"}])
+        assert result["gradable"] is False
+        assert result["percent"] is None
+
+    def test_no_config_returns_none(self):
+        from app.services.scoring import evaluate_scoring
+        case = _fake_case(scoring_points=[], key_facts=[])
+        assert evaluate_scoring(case, "初级", [{"role": "user", "content": "少阳"}]) is None
+
+    def test_by_stage_summary(self):
+        from app.services.scoring import evaluate_scoring
+        messages = [{"role": "user", "content": "少阳，脉弦"}]
+        result = evaluate_scoring(_fake_case(), "初级", messages)
+        assert result["by_stage"]["辨病"]["total"] == 20
+        assert result["by_stage"]["平脉"]["total"] == 15
+
+    def test_key_facts_completeness(self):
+        from app.services.scoring import evaluate_scoring
+        messages = [{"role": "user", "content": "你怕冷发热吗？出汗多不多？"}]
+        result = evaluate_scoring(_fake_case(), "初级", messages)
+        facts = result["key_facts"]
+        assert facts["asked"] == 2
+        assert facts["total"] == 2
+        assert facts["missing"] == []
+
+    def test_missing_key_facts_listed(self):
+        from app.services.scoring import evaluate_scoring
+        messages = [{"role": "user", "content": "你怕冷吗"}]
+        result = evaluate_scoring(_fake_case(), "初级", messages)
+        assert result["key_facts"]["missing"] == ["出汗"]
+
+    def test_brief_mentions_missing_points(self):
+        from app.services.scoring import evaluate_scoring, format_scoring_brief
+        messages = [{"role": "user", "content": "少阳"}]
+        brief = format_scoring_brief(evaluate_scoring(_fake_case(), "初级", messages))
+        assert "57" in brief
+        assert "未覆盖" in brief
+
+    def test_brief_empty_when_not_gradable(self):
+        from app.services.scoring import format_scoring_brief
+        assert format_scoring_brief(None) == ""
+        assert format_scoring_brief({"gradable": False}) == ""
+
+
+class TestSemanticReview:
+    """语义复核：只把规则没判上的部分交给模型。"""
+
+    def _review(self):
+        from app.services.scoring import evaluate_scoring, build_semantic_review
+        messages = [{"role": "user", "content": "考虑少阳"}]
+        scoring = evaluate_scoring(_fake_case(), "初级", messages)
+        return scoring, build_semantic_review(scoring, messages)
+
+    def test_only_unmatched_points_are_reviewed(self):
+        from app.services.scoring import evaluate_scoring, build_semantic_review
+        messages = [
+            {"role": "user", "content": "考虑少阳"},
+            {"role": "user", "content": "腰不酸"},
+        ]
+        scoring = evaluate_scoring(_fake_case(), "初级", messages)
+        review = build_semantic_review(scoring, messages)
+        # 「少阳」已命中辨病，送审的只剩「脉弦」一条
+        assert len(review["missed_points"]) == 1
+        assert all(item["hit"] is False for item in review["missed_points"])
+
+    def test_prompt_contains_student_words(self):
+        _, review = self._review()
+        assert "考虑少阳" in review["prompt"]
+        assert "脉弦主少阳" in review["prompt"]
+
+    def test_apply_marks_hit_when_evidence_found(self):
+        from app.services.scoring import apply_semantic_review
+        scoring, review = self._review()
+        before = scoring["total"]
+        updated = apply_semantic_review(review, {"要点": [
+            {"编号": 1, "表达": True, "依据": "考虑少阳"},
+        ]})
+        assert updated["total"] > before
+        assert updated["semantic_review"]["adopted_points"] == 1
+
+    def test_evidence_not_in_text_is_rejected(self):
+        """模型编造的依据不能算数。
+
+        没有这道闸，模型会把「没判上」的要点全判命中——实测直接给了满分。
+        """
+        from app.services.scoring import apply_semantic_review
+        scoring, review = self._review()
+        before = scoring["total"]
+        updated = apply_semantic_review(review, {"要点": [
+            {"编号": 1, "表达": True, "依据": "脉弦主少阳肝胆气郁"},
+        ]})
+        assert updated["total"] == before
+        assert updated["semantic_review"]["rejected_points"] == 1
+
+    def test_apply_marks_revealed_facts(self):
+        from app.services.scoring import (
+            evaluate_scoring, build_semantic_review, apply_semantic_review,
+        )
+        messages = [
+            {"role": "user", "content": "考虑少阳"},
+            {"role": "assistant", "content": "最近老觉得身上发冷"},
+        ]
+        scoring = evaluate_scoring(_fake_case(), "初级", messages)
+        review = build_semantic_review(scoring, messages)
+        assert review["missing_facts"] == ["主诉", "出汗"]
+        updated = apply_semantic_review(review, {"信息": [
+            {"编号": 1, "已说": True, "依据": "身上发冷"},
+        ]})
+        assert updated["key_facts"]["revealed"] == 1
+        assert updated["key_facts"]["missing"] == ["出汗"]
+
+    def test_bad_verdict_is_ignored(self):
+        from app.services.scoring import apply_semantic_review
+        scoring, review = self._review()
+        before = scoring["total"]
+        for bad in (None, "不是字典", {"要点": [{"编号": "x"}]}, {}, {"要点": "全对"}):
+            assert apply_semantic_review(review, bad)["total"] == before
+
+    def test_no_review_when_everything_matched(self):
+        from app.services.scoring import evaluate_scoring, build_semantic_review
+        case = _fake_case(scoring_points=[
+            {"stage": "辨病", "text": "少阳", "weight": 10,
+             "keywords": ["少阳"], "min_level": "初级"},
+        ], key_facts=[])
+        messages = [{"role": "user", "content": "少阳"}]
+        scoring = evaluate_scoring(case, "初级", messages)
+        assert build_semantic_review(scoring, messages) is None
+
+    def test_no_review_without_scoring(self):
+        from app.services.scoring import build_semantic_review
+        assert build_semantic_review(None, []) is None
+
+    def test_lenient_parse_recovers_broken_json(self):
+        """模型输出的 JSON 偶尔会坏掉，不能因此让整次复核白跑。"""
+        from app.services.agent_service import TrainingAgent
+        broken = ('{"要点": [{"编号": 1, "依据": "考虑少阳"}], '
+                  '"信息": [{"编号": 2, "依据": "我怕冷"}]')   # 缺最外层右括号
+        parsed = TrainingAgent._parse_semantic_verdict(broken)
+        assert parsed is not None
+        assert parsed["要点"][0]["依据"] == "考虑少阳"
+        assert parsed["信息"][0]["编号"] == 2
+
+    def test_lenient_parse_returns_none_for_garbage(self):
+        from app.services.agent_service import TrainingAgent
+        assert TrainingAgent._parse_semantic_verdict("模型没按要求输出") is None
+
+
+class TestKeyFactsRevealed:
+    """患者开场白已经说过的信息，不该算学生「漏问」。"""
+
+    def test_patient_revealed_not_reported_as_missing(self):
+        from app.services.scoring import evaluate_key_facts
+        messages = [
+            {"role": "assistant", "content": "我怕冷，也不太出汗"},
+            {"role": "user", "content": "嗯，你说说"},
+        ]
+        result = evaluate_key_facts(_CASE_FACTS, "初级", messages)
+        assert result["revealed"] == 2
+        assert result["missing"] == []
+        assert result["ratio"] == 1.0
+
+    def test_asked_and_revealed_are_counted_separately(self):
+        from app.services.scoring import evaluate_key_facts
+        messages = [
+            {"role": "assistant", "content": "我有点怕冷"},
+            {"role": "user", "content": "出汗多吗"},
+        ]
+        result = evaluate_key_facts(_CASE_FACTS, "初级", messages)
+        assert result["asked"] == 1
+        assert result["revealed"] == 1
+        assert result["missing"] == []
+
+    def test_truly_missing_still_reported(self):
+        from app.services.scoring import evaluate_key_facts
+        messages = [
+            {"role": "assistant", "content": "我有点怕冷"},
+            {"role": "user", "content": "什么时候开始的"},
+        ]
+        result = evaluate_key_facts(_CASE_FACTS, "初级", messages)
+        assert result["missing"] == ["出汗"]
+
+
+class TestProgressMergeGuard:
+    """AI 复核不得绕过平脉与定治的硬条件。
+
+    线上实测：学生只说「应当调和营卫，疏肝解郁」、一个方都没开，
+    模型却把定治判成完成，会话在「该开方」之前就自己结束了。
+    """
+
+    def test_ai_cannot_complete_treatment(self):
+        from app.services.agent_service import TrainingAgent
+        base = {"辨病": True, "平脉": True, "析证": True, "定治": False}
+        merged = TrainingAgent._merge_ai_progress(
+            dict(base),
+            {"辨病": True, "平脉": True, "析证": True, "定治": True,
+             "current_stage": "已完成"},
+        )
+        assert merged["定治"] is False
+
+    def test_ai_cannot_complete_pulse(self):
+        from app.services.agent_service import TrainingAgent
+        base = {"辨病": True, "平脉": False, "析证": False, "定治": False}
+        merged = TrainingAgent._merge_ai_progress(dict(base), {"平脉": True})
+        assert merged["平脉"] is False
+
+    def test_ai_can_still_supplement_diagnosis_and_pathogenesis(self):
+        from app.services.agent_service import TrainingAgent
+        base = {"辨病": False, "平脉": True, "析证": False, "定治": False}
+        merged = TrainingAgent._merge_ai_progress(
+            dict(base), {"辨病": True, "析证": True})
+        assert merged["辨病"] is True
+        assert merged["析证"] is True
+
+    def test_stage_is_recomputed_from_rules(self):
+        from app.services.agent_service import TrainingAgent
+        assert TrainingAgent._stage_from_progress(
+            {"辨病": True, "平脉": True, "析证": True, "定治": False}, "高级") == "定治"
+        assert TrainingAgent._stage_from_progress(
+            {"辨病": True, "平脉": True, "析证": True, "定治": False}, "中级") == "已完成"
+        assert TrainingAgent._stage_from_progress(
+            {"辨病": True, "平脉": True, "析证": True, "定治": True}, "高级") == "已完成"
+
+
+class TestEvaluateSessionWithScoring:
+    """评价接入：配了要点就按要点给分，没配就沿用模型分。"""
+
+    def _prepare(self, db_session, agent, case, level, student_lines):
+        from app.models import SessionMessage
+        session = TrainingSession(
+            student_id="test_scoring", difficulty_level=level,
+            case_id=case.id, status="active",
+        )
+        db_session.add(session)
+        db_session.commit()
+        db_session.refresh(session)
+        for line in student_lines:
+            db_session.add(SessionMessage(
+                session_id=session.id, role="student", content=line))
+        db_session.commit()
+        agent.client = None          # 不触发真实模型调用
+        return session
+
+    def test_score_comes_from_scoring_points(self, db_session, agent,
+                                             sample_case_advanced):
+        sample_case_advanced.scoring_points = _CASE_POINTS
+        sample_case_advanced.key_facts = _CASE_FACTS
+        db_session.commit()
+        session = self._prepare(db_session, agent, sample_case_advanced,
+                                "初级", ["考虑少阳枢机不利"])
+        result = agent.evaluate_session(db_session, session.id)
+        assert result["scoring"]["gradable"] is True
+        assert result["score"] == "57.1"
+        db_session.refresh(session)
+        assert session.scoring["percent"] == pytest.approx(57.1, abs=0.1)
+        assert session.evaluation             # 评价原文已落库
+
+    def test_level_changes_same_answer_score(self, db_session, agent,
+                                             sample_case_advanced):
+        sample_case_advanced.scoring_points = _CASE_POINTS
+        db_session.commit()
+        beginner = self._prepare(db_session, agent, sample_case_advanced,
+                                 "初级", ["考虑少阳枢机不利"])
+        r1 = agent.evaluate_session(db_session, beginner.id)
+
+        advanced = self._prepare(db_session, agent, sample_case_advanced,
+                                 "高级", ["考虑少阳枢机不利"])
+        r2 = agent.evaluate_session(db_session, advanced.id)
+        assert float(r1["score"]) > float(r2["score"])
+
+    def test_no_config_keeps_legacy_behaviour(self, db_session, agent,
+                                              sample_case_beginner):
+        session = self._prepare(db_session, agent, sample_case_beginner,
+                                "初级", ["我看看"])
+        result = agent.evaluate_session(db_session, session.id)
+        assert result["scoring"] is None
+        assert result["score"] == "未评分"    # 无模型、无要点时的占位，未被覆盖

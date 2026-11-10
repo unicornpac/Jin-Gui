@@ -129,6 +129,11 @@ class MedicalCase(Base):
     correct_answer = Column(Text, comment="参考答案（辨病/平脉/析证/定治）")
     # 体格检查可得客观体征：{"pulse": {"text": "脉弦缓"}, "tongue": {...}}
     examinations = Column(JSON, comment="可检查的客观体征（脉/舌/腹/面/咽），供诊法直出使用")
+    # 结构化教学数据（P3）：让评分从「LLM 自由打分」变成「按要点逐条对照」
+    # key_facts: [{"id":"chief","label":"主诉","text":"...","must_ask":true,"min_level":"初级","keywords":[...]}]
+    key_facts = Column(JSON, comment="问诊要点，用于完整度统计")
+    # scoring_points: [{"stage":"辨病","text":"...","weight":20,"keywords":[...],"min_level":"初级"}]
+    scoring_points = Column(JSON, comment="评分要点，按关键词逐条对照打分")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -192,6 +197,9 @@ class TrainingSession(Base):
     # 已完成过的体格检查项，用于「不重复检查」判定
     examinations_done = Column(JSON, default=list, comment="已获取的检查项 key 列表")
     score = Column(String(50), comment="综合评价分数/等级")
+    # 评价结果落库：重复打开「已评价」的会话时直接回放，不必再花一次模型调用
+    evaluation = Column(Text, comment="评价报告原文（JSON 文本）")
+    scoring = Column(JSON, comment="结构化要点得分明细")
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), comment="结束时间")
 
