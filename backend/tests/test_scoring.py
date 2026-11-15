@@ -156,11 +156,27 @@ class TestScoringEvaluate:
 class TestSemanticReview:
     """语义复核：只把规则没判上的部分交给模型。"""
 
-    def _review(self):
+    def _review(self, **kwargs):
         from app.services.scoring import evaluate_scoring, build_semantic_review
         messages = [{"role": "user", "content": "考虑少阳"}]
         scoring = evaluate_scoring(_fake_case(), "初级", messages)
-        return scoring, build_semantic_review(scoring, messages)
+        return scoring, build_semantic_review(scoring, messages, **kwargs)
+
+    def test_points_are_off_by_default(self):
+        """默认只做信息核对：要点计分不交给模型。"""
+        _, review = self._review()
+        assert review is not None
+        assert review["missed_points"] == []
+        assert len(review["missing_facts"]) == 2
+        assert "【评分要点】" not in review["prompt"]
+        assert "【关键信息】" in review["prompt"]
+
+    def test_skips_call_when_facts_already_known(self):
+        """信息都交代清楚了就不发这次请求。"""
+        from app.services.scoring import evaluate_scoring, build_semantic_review
+        messages = [{"role": "user", "content": "考虑少阳，你怕冷吗？出汗呢？"}]
+        scoring = evaluate_scoring(_fake_case(), "初级", messages)
+        assert build_semantic_review(scoring, messages) is None
 
     def test_only_unmatched_points_are_reviewed(self):
         from app.services.scoring import evaluate_scoring, build_semantic_review
@@ -169,13 +185,13 @@ class TestSemanticReview:
             {"role": "user", "content": "腰不酸"},
         ]
         scoring = evaluate_scoring(_fake_case(), "初级", messages)
-        review = build_semantic_review(scoring, messages)
+        review = build_semantic_review(scoring, messages, include_points=True)
         # 「少阳」已命中辨病，送审的只剩「脉弦」一条
         assert len(review["missed_points"]) == 1
         assert all(item["hit"] is False for item in review["missed_points"])
 
     def test_prompt_contains_student_words(self):
-        _, review = self._review()
+        _, review = self._review(include_points=True)
         assert "考虑少阳" in review["prompt"]
         assert "脉弦主少阳" in review["prompt"]
 
@@ -185,7 +201,7 @@ class TestSemanticReview:
         没有这道闸，模型会把「没判上」的要点全判命中——实测直接给了满分。
         """
         from app.services.scoring import apply_semantic_review
-        scoring, review = self._review()
+        scoring, review = self._review(include_points=True)
         before = scoring["total"]
 
         adopted = apply_semantic_review(review, {"要点": [
@@ -194,7 +210,7 @@ class TestSemanticReview:
         assert adopted["total"] > before
         assert adopted["semantic_review"]["adopted_points"] == 1
 
-        _, review2 = self._review()
+        _, review2 = self._review(include_points=True)
         rejected = apply_semantic_review(review2, {"要点": [
             {"编号": 1, "依据": "脉弦主少阳肝胆气郁"},  # 原话里没有，驳回
         ]})

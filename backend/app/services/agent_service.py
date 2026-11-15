@@ -19,7 +19,7 @@ from ..models import TrainingSession, SessionMessage, MedicalCase
 from .prompts_config import (
     SAFETY_GUARD,
     SYSTEM_PROMPT_BEGINNER, SYSTEM_PROMPT_INTERMEDIATE, SYSTEM_PROMPT_ADVANCED,
-    EVALUATION_PROMPT
+    EVALUATION_PROMPT, STAGE_REVIEW_PROMPT,
 )
 from ..logger import get_logger
 from .safety import (
@@ -29,7 +29,7 @@ from .western_data import generate_western_test_context
 from .progress import (
     classify_response, extract_decision_point, should_end_session, build_progress_hint,
     DISEASE_KEYWORDS, PATHOGENESIS_KEYWORDS, DIFFERENTIAL_KEYWORDS,
-    TREATMENT_METHOD_KEYWORDS, FORMULA_KEYWORDS,
+    TREATMENT_METHOD_KEYWORDS, FORMULA_KEYWORDS, statement_text,
 )
 from .treatment_safety import (
     assess_treatment_message, assess_treatment_safety, build_patient_treatment_context,
@@ -396,6 +396,10 @@ class TrainingAgent:
                     medical_case, session, exam_key, db
                 )
                 progress = self._analyze_progress(history, session)
+                # 号脉、看舌也可能顺带点亮辨病/析证，同样过一遍复核
+                progress = self._verify_new_stages(
+                    session, progress, history, session.difficulty_level
+                )
                 decision_path = session.decision_path or ""
                 new_decision = self._extract_decision_point(
                     student_content, agent_response, progress
@@ -443,6 +447,12 @@ class TrainingAgent:
                     ai_progress=ai_progress,
                     treatment_assessment=treatment_assessment,
                 )
+
+            # 规则点亮后让模型确认一次：问句/否定不该算「做出了判断」。
+            # 只在阶段首次点亮时调用，正常情况下零开销。
+            progress = self._verify_new_stages(
+                session, progress, history, session.difficulty_level
+            )
 
             # history 已包含刚存入的学生消息；传给 _call_llm 时只追加一次当前输入。
             reply_history = self._history_before_current_input(history, student_content)
@@ -600,9 +610,12 @@ class TrainingAgent:
         progress = {"辨病": False, "平脉": False, "析证": False, "定治": False,
                     "message_count": len(history), "current_stage": "辨病"}
         # 只统计学生自己的表述：患者的话（包括直出的脉舌体征）不能算作学生的辨证
-        all_text = " ".join([
+        raw_text = " ".join([
             m.get("content", "") for m in history[-10:] if m.get("role") == "user"
         ])
+        # 再只留陈述句：问句（"是不是少阳病？"）和否定句（"不像少阳"）
+        # 都带关键词，但都不是「做出判断」，不能用来点亮阶段
+        all_text = statement_text(raw_text)
         turns = sum(1 for m in history if m.get("role") == "user")
 
         # 剔掉「与太阳表虚鉴别」这类子句：鉴别对象不是学生自己的辨病结论
@@ -651,6 +664,91 @@ class TrainingAgent:
         # 直接说「已完成」，引导与进度条就一起跑偏了。
         merged["current_stage"] = self._stage_from_progress(merged, level)
         return merged
+
+    # ---------- 阶段复核（规则点亮后再让模型确认一次）----------
+    # 只盯这两步：平脉是客观动作（做过切诊），定治有方剂硬条件，都已经能硬判。
+    REVIEW_STAGES = ("辨病", "析证")
+    STAGE_DEFINITIONS = {
+        "辨病": "说出病名或证型方向，例如「少阳枢机不利」「痰饮」",
+        "析证": "解释病机，并给出至少一组与相近证的鉴别",
+    }
+
+    @staticmethod
+    def _parse_stage_verdict(resp: str) -> Optional[bool]:
+        match = re.search(r"\{[\s\S]*\}", resp or "")
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group())
+        except json.JSONDecodeError:
+            return None
+        value = data.get("判断")
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in ("true", "是", "yes", "1"):
+                return True
+            if text in ("false", "否", "no", "0"):
+                return False
+        return None
+
+    def _verify_stage(self, stage: str, history: List[dict]) -> Optional[bool]:
+        """确认学生是真的做出了这个阶段的判断；判不了返回 None。"""
+        if not self.client:
+            return None
+        lines = [m.get("content", "") for m in history if m.get("role") == "user"]
+        if not lines:
+            return None
+        prompt = STAGE_REVIEW_PROMPT.format(
+            stage=stage,
+            definition=self.STAGE_DEFINITIONS.get(stage, ""),
+            lines="\n".join(f"- {line[:120]}" for line in lines[-6:]),
+        )
+        try:
+            resp = self._call_llm(
+                "你是中医教学进度判定助手。只输出 JSON。", [],
+                prompt, temperature=0.1, max_tokens=200,
+            )
+        except Exception as exc:
+            logger.warning("阶段复核调用失败，采信规则：%s", exc)
+            return None
+        verdict = self._parse_stage_verdict(resp)
+        logger.info("阶段复核 %s → %s", stage, verdict)
+        return verdict
+
+    def _verify_new_stages(self, session: TrainingSession, progress: dict,
+                           history: List[dict], level: str) -> dict:
+        """新点亮的阶段让模型确认一次；被否决则撤销并级联修正下游。
+
+        只在「规则刚判定完成、且还没复核过」时调用，一场会话最多两次。
+        模型不可用、超时或答非所问时保留规则结果——进度不会因为模型抽风而卡住。
+        """
+        if not self.client:
+            return progress
+        verified = list(session.verified_stages or [])
+        changed = False
+        for stage in self.REVIEW_STAGES:
+            if not progress.get(stage) or stage in verified:
+                continue
+            verdict = self._verify_stage(stage, history)
+            if verdict is False:
+                progress[stage] = False
+                logger.info("阶段 %s 被否决：学生只是提问或否定，不算做出判断", stage)
+                # 不记入 verified：学生补充陈述后下一轮还会重新判定
+            elif verdict is True:
+                verified.append(stage)
+                changed = True
+        if changed:
+            session.verified_stages = verified
+        # 阶段有先后依赖，前面被撤销时后面要一起退
+        if not progress.get("平脉"):
+            progress["析证"] = False
+        if not progress.get("析证"):
+            progress["定治"] = False
+        if level != "初级":
+            progress["current_stage"] = self._stage_from_progress(progress, level)
+        return progress
 
     @staticmethod
     def _merge_ai_progress(progress: dict, ai_progress: Optional[dict],

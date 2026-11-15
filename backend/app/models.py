@@ -200,6 +200,9 @@ class TrainingSession(Base):
     # 评价结果落库：重复打开「已评价」的会话时直接回放，不必再花一次模型调用
     evaluation = Column(Text, comment="评价报告原文（JSON 文本）")
     scoring = Column(JSON, comment="结构化要点得分明细")
+    # 已通过模型复核的阶段。规则点亮某阶段后让模型确认一次，
+    # 确认过的记下来，避免每轮重复调用
+    verified_stages = Column(JSON, comment="已通过模型复核的思辨阶段")
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), comment="结束时间")
 

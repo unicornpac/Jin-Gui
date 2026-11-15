@@ -303,3 +303,107 @@ class TestProgressMergeGuard:
             {"辨病": True, "平脉": True, "析证": True, "定治": False}, "中级") == "已完成"
         assert TrainingAgent._stage_from_progress(
             {"辨病": True, "平脉": True, "析证": True, "定治": True}, "高级") == "已完成"
+
+
+class TestStatementFilter:
+    """进度判定只看陈述句：问句和否定句不是「做出判断」。"""
+
+    def test_drops_questions(self):
+        from app.services.progress import statement_text
+        assert statement_text("你是不是少阳病？") == ""
+        assert statement_text("少阳病？") == ""
+        assert statement_text("你怕冷吗") == ""
+        assert statement_text("有没有出汗呢") == ""
+
+    def test_drops_negations(self):
+        from app.services.progress import statement_text
+        assert statement_text("不像少阳病。") == ""
+        assert statement_text("排除太阳病") == ""
+
+    def test_keeps_affirmative_part_of_mixed_sentence(self):
+        from app.services.progress import statement_text
+        # 否定分句丢掉，肯定分句留下
+        assert statement_text("不像少阳，应该是太阳病") == "应该是太阳病"
+        kept = statement_text("脉弦缓，是少阳枢机不利。要不要用小柴胡？")
+        assert "少阳枢机不利" in kept
+        assert "小柴胡" not in kept
+
+    def test_keeps_plain_statement(self):
+        from app.services.progress import statement_text
+        text = "脉弦，病机是枢机不利，当和解少阳，方用柴胡桂枝汤"
+        assert statement_text(text) == text
+
+    def test_empty_input(self):
+        from app.services.progress import statement_text
+        assert statement_text("") == ""
+        assert statement_text(None) == ""
+
+
+class TestStageReviewGuard:
+    """阶段首次点亮时让模型确认；否决则撤销，判不了则采信规则。"""
+
+    @staticmethod
+    def _progress(**overrides):
+        base = {"辨病": False, "平脉": True, "析证": False, "定治": False,
+                "current_stage": "析证"}
+        base.update(overrides)
+        return base
+
+    @staticmethod
+    def _session(verified=None):
+        from types import SimpleNamespace
+        return SimpleNamespace(verified_stages=list(verified or []))
+
+    def test_parse_verdict(self):
+        from app.services.agent_service import TrainingAgent
+        assert TrainingAgent._parse_stage_verdict('{"判断": true}') is True
+        assert TrainingAgent._parse_stage_verdict('{"判断": false}') is False
+        assert TrainingAgent._parse_stage_verdict('{"判断": "是"}') is True
+        assert TrainingAgent._parse_stage_verdict('{"判断": "否"}') is False
+        assert TrainingAgent._parse_stage_verdict("没有 JSON") is None
+
+    def test_false_verdict_reverts_and_cascades(self, agent):
+        from unittest.mock import MagicMock
+        agent.client = object()          # 非 None 才会进入复核
+        agent._verify_stage = MagicMock(return_value=False)
+        session = self._session()
+        progress = self._progress(辨病=True, 析证=True, 定治=True)
+        result = agent._verify_new_stages(session, progress, [], "高级")
+        assert result["辨病"] is False
+        assert result["析证"] is False
+        assert result["定治"] is False    # 前面被撤销，后面级联退回
+        assert session.verified_stages == []   # 否决不记录，学生补充后重判
+
+    def test_true_verdict_records_stage(self, agent):
+        from unittest.mock import MagicMock
+        agent.client = object()
+        agent._verify_stage = MagicMock(return_value=True)
+        session = self._session()
+        result = agent._verify_new_stages(session, self._progress(辨病=True), [], "高级")
+        assert result["辨病"] is True
+        assert "辨病" in session.verified_stages
+
+    def test_unknown_verdict_keeps_rule_result(self, agent):
+        from unittest.mock import MagicMock
+        agent.client = object()
+        agent._verify_stage = MagicMock(return_value=None)
+        session = self._session()
+        result = agent._verify_new_stages(session, self._progress(辨病=True), [], "高级")
+        assert result["辨病"] is True     # fail-open
+
+    def test_skips_already_verified(self, agent):
+        from unittest.mock import MagicMock
+        agent.client = object()
+        agent._verify_stage = MagicMock(return_value=False)
+        session = self._session(["辨病"])
+        agent._verify_new_stages(session, self._progress(辨病=True), [], "高级")
+        agent._verify_stage.assert_not_called()
+
+    def test_no_client_skips_review(self, agent):
+        from unittest.mock import MagicMock
+        agent.client = None
+        agent._verify_stage = MagicMock(return_value=False)
+        session = self._session()
+        result = agent._verify_new_stages(session, self._progress(辨病=True), [], "高级")
+        assert result["辨病"] is True
+        agent._verify_stage.assert_not_called()

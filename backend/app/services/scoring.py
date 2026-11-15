@@ -24,6 +24,7 @@
 ``messages`` 的 role 兼容 ``user`` / ``student`` 两种写法（训练会话两处都用过）。
 """
 
+import os
 from typing import Any, Dict, Iterable, List, Optional
 
 LEVEL_ORDER = {"初级": 1, "中级": 2, "高级": 3}
@@ -261,75 +262,105 @@ def evaluate_scoring(
 # 所以规则判完后，把「没判上的部分」交给模型再看一遍——只判这些，成本很低，
 # 也避免模型推翻已经明确命中的条目。
 
-SEMANTIC_REVIEW_TEMPLATE = """下面是一次中医临床思维训练中，程序按关键词没能判定的部分。请逐条复核。
+SEMANTIC_REVIEW_HEADER = "在一次中医临床思维训练里，程序已经按关键词筛过一遍。下面这些是它没能判定的部分，请复核。"
 
-【一】评分要点：判断学生是否**用明确的表述**表达了该要点的核心意思。
-严格执行以下规则：
+_POINTS_SECTION = """
+【评分要点】判断学生是否**用明确的表述**表达了该要点的核心意思。
 - 必须从"学生原话"里摘出一句能**直接支撑**该要点的原文作为依据；
 - 只是提到相关术语、没有做出相应判断的，判「没有」；
-- 学生没有明说的内容，一律判「没有」；
-- 摘不出依据，就判「没有」。
-
-宁可判「没有」，也不要给人情分。学生开没开方、做没做鉴别、说没说方义，
-这些必须以原话为准。
+- 学生没有明说的内容，一律判「没有」；摘不出依据就判「没有」。
+宁可判「没有」，也不要给人情分。学生开没开方、做没做鉴别、说没说方义，都以原话为准。
 
 要点：
 {point_block}
 
 学生原话：
 {student_text}
+"""
 
-【二】关键信息：判断患者是否**自己主动说出**过这些信息（不是被问出来的）。
-同样必须摘出患者原话作为依据。
+_FACTS_SECTION = """
+【关键信息】判断患者是否**自己主动说出**过这些信息（不是被问出来的）。
+必须摘出患者原话作为依据，摘不出就判「没有」。
 
 信息：
 {fact_block}
 
 患者说过的话：
 {patient_text}
+"""
 
+SEMANTIC_REVIEW_OUTPUT = """
 只输出 JSON，不要解释，不要多余文字：
 {{"要点": [{{"编号": 1, "依据": "学生原话片段"}}],
   "信息": [{{"编号": 1, "依据": "患者原话片段"}}]}}
 
 只列出你确认对方**确实说过**的条目，没列出的按「没有」处理。
-依据必须逐字摘自原文，不要改写、不要合并、不要加引号以外的符号。
-大多数条目都应该判「没有」，有把握才列。"""
+依据必须逐字摘自原文，不要改写、不要合并。大多数条目都应该判「没有」。"""
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def build_semantic_review(
     scoring: Optional[dict],
     messages: Optional[Iterable[dict]],
+    include_points: Optional[bool] = None,
+    include_facts: Optional[bool] = None,
 ) -> Optional[dict]:
-    """把规则没判定的部分打包成一次语义复核请求；没有可复核项时返回 None。"""
+    """把规则没判定的部分打包成一次语义复核请求；没有可复核项时返回 None。
+
+    两块分开开关，默认「要点关闭、信息开启」：
+
+    - **要点计分**交给模型会虚高。病机、方剂这类判断有标准答案，学生说了关键词就能命中；
+      模型反而会把「相关」当成「就是」——实测把学生没提的「口苦」「春秋病机」判成答对，
+      一次直接给到 100 分。所以默认只认关键词。
+    - **信息完整度**不同。患者说「嘴巴又干又苦」而要点写「口苦」，关键词认不出同义说法，
+      模型能认出来。这项不计分，判错也只是提示不准，所以默认保留。
+
+    信息全部交代清楚时两块都为空，直接返回 None——不产生这次调用。
+    """
     if not scoring:
         return None
+    if include_points is None:
+        include_points = _env_flag("SCORING_SEMANTIC_POINTS", False)
+    if include_facts is None:
+        include_facts = _env_flag("SCORING_SEMANTIC_FACTS", True)
+
     # strict 要点不送审：方剂、鉴别这类事实只认字面
     missed = [
         item for item in scoring.get("points", [])
         if item["hit"] is False and not item.get("strict")
-    ]
+    ] if include_points else []
     facts = scoring.get("key_facts") or {}
-    missing_facts = list(facts.get("missing") or [])
+    missing_facts = list(facts.get("missing") or []) if include_facts else []
     if not missed and not missing_facts:
         return None
 
-    point_block = "\n".join(
-        f"{index}. （{item['stage']}）{item['text']}"
-        for index, item in enumerate(missed, start=1)
-    ) or "（无）"
-    fact_block = "\n".join(
-        f"{index}. {label}" for index, label in enumerate(missing_facts, start=1)
-    ) or "（无）"
     said_by_student = student_text(messages)
     said_by_patient = patient_text(messages)
-
-    prompt = SEMANTIC_REVIEW_TEMPLATE.format(
-        point_block=point_block,
-        student_text=said_by_student or "（学生没有发言）",
-        fact_block=fact_block,
-        patient_text=said_by_patient or "（患者没有发言）",
-    )
+    sections = []
+    if missed:
+        point_block = "\n".join(
+            f"{index}. （{item['stage']}）{item['text']}"
+            for index, item in enumerate(missed, start=1)
+        )
+        sections.append(_POINTS_SECTION.format(
+            point_block=point_block,
+            student_text=said_by_student or "（学生没有发言）",
+        ))
+    if missing_facts:
+        fact_block = "\n".join(
+            f"{index}. {label}" for index, label in enumerate(missing_facts, start=1)
+        )
+        sections.append(_FACTS_SECTION.format(
+            fact_block=fact_block,
+            patient_text=said_by_patient or "（患者没有发言）",
+        ))
+    prompt = SEMANTIC_REVIEW_HEADER + "\n" + "\n".join(sections) + SEMANTIC_REVIEW_OUTPUT
     return {
         "prompt": prompt,
         "missed_points": missed,        # 引用原列表，应用时原地修改

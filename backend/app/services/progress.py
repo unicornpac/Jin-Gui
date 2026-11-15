@@ -2,6 +2,7 @@
 进度分析与决策辅助 —— 从 TrainingAgent 拆分
 所有函数均为纯函数，不依赖 TrainingAgent 实例状态
 """
+import re
 from typing import List, Optional
 
 # ==================== 阶段判定用的词表 ====================
@@ -80,6 +81,54 @@ def extract_decision_point(student: str, agent: str, progress: dict) -> Optional
 
 STAGE_KEYS = ("辨病", "平脉", "析证", "定治")
 SESSION_TURN_LIMIT = 50
+
+# 疑问句的特征：句末语气词/问号，或句首的疑问结构
+_QUESTION_TAIL = ("？", "?", "吗", "呢")
+_QUESTION_HEAD = (
+    "是不是", "是否", "有没有", "会不会", "像不像", "能不能", "要不要", "可不可以",
+    "什么", "怎么", "如何", "为什么", "哪",
+)
+# 只有明确的判断性否定才算；「无力」「无汗」这类症状描述不能进这张表
+_NEGATION = ("不是", "不属", "并非", "不像", "排除", "不支持", "不代表", "不能说")
+
+_SENTENCE_END = re.compile(r"(?<=[。！？!?；;\n])")
+
+
+def _has_negation(sentence: str) -> bool:
+    return any(marker in sentence for marker in _NEGATION)
+
+
+def _is_question(sentence: str) -> bool:
+    if sentence.endswith(_QUESTION_TAIL):
+        return True
+    return any(sentence.startswith(marker) for marker in _QUESTION_HEAD)
+
+
+def statement_text(text: str) -> str:
+    """只保留学生的**陈述句**，剔除问句与否定句。
+
+    进度判定关心的是「学生有没有做出判断」，而不是「有没有出现关键词」。
+    「是不是少阳病？」「不像少阳」都含关键词，但都不是判断——
+
+    - 问句：整句丢弃（"你是不是少阳病？"）
+    - 否定句：按逗号拆开，只丢掉带否定的分句（"不像少阳，应该是太阳病"
+      保留后半句的「太阳病」）
+    """
+    if not text:
+        return ""
+    kept: List[str] = []
+    for sentence in _SENTENCE_END.split(text):
+        sentence = sentence.strip()
+        if not sentence or _is_question(sentence):
+            continue
+        if _has_negation(sentence):
+            for part in re.split(r"[，,、]", sentence):
+                part = part.strip()
+                if part and not _has_negation(part) and not _is_question(part):
+                    kept.append(part)
+        else:
+            kept.append(sentence)
+    return " ".join(kept)
 
 
 def should_end_session(history: List[dict], progress: dict, level: str) -> bool:
