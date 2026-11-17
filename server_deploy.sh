@@ -66,6 +66,7 @@ FILES=(
 ROOT_FILES=(
   "server_deploy.sh"
   "jingui.service"
+  "SERVER_DEPLOY_GUIDE.md"
 )
 
 sqlite_backup() {

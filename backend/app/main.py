@@ -169,9 +169,27 @@ async def health_check():
     return await ready_check()
 
 
+def _raise_thread_pool() -> None:
+    """放宽 anyio 线程池，避免同步端点排队。
+
+    训练对话、结算这类端点是同步 def（内部调用 OpenAI SDK），Starlette 会把它们
+    交给 anyio 线程池，默认上限只有 40。50 个学生同时发消息时，第 41 个开始排队
+    等别人结束。按线人数放宽到 THREAD_POOL_SIZE（默认 100），可用环境变量下调。
+    """
+    try:
+        import anyio.to_thread
+
+        target = max(40, int(os.getenv("THREAD_POOL_SIZE", "100")))
+        anyio.to_thread.current_default_thread_limiter().total_tokens = target
+        logger.info("同步端点线程池上限: %d", target)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("线程池调整失败，沿用默认 40: %s", exc)
+
+
 @app.on_event("startup")
 async def startup_event():
-    """应用启动时初始化数据库"""
+    """应用启动：放宽线程池并初始化数据库"""
+    _raise_thread_pool()
     init_db()
     logger.info("数据库初始化完成")
 

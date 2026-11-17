@@ -1,7 +1,7 @@
 """
 数据库连接和会话管理
 """
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from .logger import get_logger
@@ -26,6 +26,29 @@ engine = create_engine(
     connect_args={"check_same_thread": False},  # SQLite需要这个参数
     echo=False  # 设置为True可以看到SQL语句
 )
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, connection_record):
+    """每条新连接生效的 SQLite 参数。
+
+    默认的 rollback journal 模式下，一个写事务会阻塞所有读；多人同时训练、
+    管理员同时翻看会话列表时，很容易撞上 "database is locked"。
+    - WAL：读写互不阻塞，写与写仍串行但等待时间大幅缩短
+    - busy_timeout：抢不到写锁时等待 5 秒再报错，而不是立刻失败
+    - synchronous=NORMAL：WAL 下的常规取舍，牺牲极端断电时的最后一笔事务
+    内存库会静默忽略这些设置，测试不受影响。
+    """
+    try:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cursor.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("SQLite 参数设置失败（沿用默认值）: %s", exc)
 
 # 创建会话工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
