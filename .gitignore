@@ -15,6 +15,12 @@ __pycache__/
 *.db
 backend/data/tcm.db
 
+# SQLite WAL 模式：-wal 里是尚未 checkpoint 的真实数据，-shm 是共享内存索引。
+# 两者都含病案/会话内容，绝不能入库（`*.db` 通配匹配不到它们）
+*.db-wal
+*.db-shm
+*.db-journal
+
 # IDE
 .idea/
 .vscode/

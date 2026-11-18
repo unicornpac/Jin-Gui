@@ -38,6 +38,7 @@ from .examination import (
     detect_examination, build_reply, build_repeat_reply, absent_reply,
 )
 from .guidance import build_guidance
+from .symptom_guard import find_new_symptoms, build_notice
 from .scoring import (
     evaluate_scoring, format_scoring_brief,
     build_semantic_review, apply_semantic_review,
@@ -381,6 +382,7 @@ class TrainingAgent:
             progress = {"辨病": False, "平脉": False, "析证": False, "定治": False,
                        "message_count": 0, "current_stage": "辨病"}
             session_status = "active"
+            display_response = agent_response
         else:
             # 正常消息或玩笑请求：保存学生消息，走正常 LLM 流程
             student_msg = SessionMessage(session_id=session_id, role="student",
@@ -492,7 +494,11 @@ class TrainingAgent:
                                        content=agent_response, message_type=msg_type,
                                        key_decision=new_decision if new_decision else None)
             db.add(agent_msg); db.commit()
-            
+
+            # 患者有时会说出病案里没有的症状。检测到就标出来给学生看——
+            # 注记只进返回给前端的文本，不进上面这条消息，避免下一轮模型跟着学。
+            display_response = self._annotate_new_symptoms(agent_response, medical_case)
+
             should_end = self._should_end_session(history, progress, session.difficulty_level)
             session_status = "completed" if should_end else "active"
             if should_end:
@@ -501,7 +507,29 @@ class TrainingAgent:
                 db.commit()
 
         self._attach_guidance(progress, session, history)
-        return agent_response, msg_type, session_status, progress
+        return display_response, msg_type, session_status, progress
+
+    @staticmethod
+    def _annotate_new_symptoms(response: str, medical_case) -> str:
+        """患者说了病案外的症状时，在回复末尾加一行注记（只给展示用）。
+
+        注记不能进库：入库的是原始回复，注入历史会让下一轮模型跟着学，
+        评价也会被这行字干扰。检测本身失败时原样返回，不影响对话。
+        """
+        try:
+            extra = find_new_symptoms(response, medical_case)
+        except Exception as exc:
+            logger.warning("症状越界检测失败：%s", exc)
+            return response
+        if not extra:
+            return response
+        logger.warning("患者回复含病案外症状 %s：%s", extra, (response or "")[:80])
+        enabled = os.getenv("SYMPTOM_NOTICE", "1").strip().lower() not in (
+            "0", "false", "no", "off",
+        )
+        if not enabled:
+            return response
+        return (response or "") + "\n" + build_notice(extra)
     
     def _attach_guidance(self, progress: dict, session, history: list) -> dict:
         """把下一步提示与进度展示所需的数据挂到 progress 上，供前端渲染。"""
@@ -827,7 +855,15 @@ class TrainingAgent:
         if include_reference:
             parts.append(f"病案标题：{medical_case.title}")
         if medical_case.symptoms:
-            parts.append(f"【症状描述】{medical_case.symptoms[:500]}")
+            if include_reference:
+                parts.append(f"【症状描述】{medical_case.symptoms[:500]}")
+            else:
+                # 给患者的版本要强调「这就是全部」：模型此前会把没写的东西
+                # 当成「次要细节」自由发挥，说出病案里没有的咳嗽、痰多。
+                parts.append(
+                    "【症状描述（这是你全部的不适，除此之外没有任何别的症状）】"
+                    f"{medical_case.symptoms[:500]}"
+                )
         parts.append(f"【主诉/病史】{medical_case.content[:600]}")
         if include_reference and medical_case.diagnosis:
             parts.append(f"（导师参考——诊断：{medical_case.diagnosis}）")

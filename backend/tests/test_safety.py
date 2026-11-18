@@ -260,3 +260,66 @@ class TestPatientOutputGuard:
         assert reply
         for bad in ("说得对", "有道理", "你错了"):
             assert bad not in reply
+
+
+class TestSymptomGuard:
+    """患者说了病案外的症状时要标出来，但注记不能进对话历史。"""
+
+    @staticmethod
+    def _case():
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            symptoms="反复感冒、头晕乏力、时时喷嚏、口苦口干、纳呆食减、心烦易怒",
+            content="患者，女，40 岁。反复感冒七八年，每次都要七八天才能缓解。",
+            diagnosis="少阳病（少阳枢机不利）",
+            teaching_points="",
+            correct_answer="",
+        )
+
+    def test_detects_symptom_not_in_case(self):
+        from app.services.symptom_guard import find_new_symptoms
+        # 实测里患者就是这么说的，咳嗽和痰都不在病案中
+        assert find_new_symptoms("我就是咳得厉害、痰多", self._case()) == ["咳嗽", "咳痰"]
+
+    def test_negated_mention_is_not_flagged(self):
+        """患者回答「咳嗽倒是没有」时，不能算他编造了咳嗽。"""
+        from app.services.symptom_guard import find_new_symptoms
+        assert find_new_symptoms("咳嗽倒是没有，痰？偶尔会有一点", self._case()) == []
+
+    def test_short_negation_is_not_flagged(self):
+        """「不咳嗽」「没痰」这种紧邻否定同样不算编造。"""
+        from app.services.symptom_guard import find_new_symptoms
+        text = "不咳嗽，也没痰，就是老流鼻涕"
+        assert find_new_symptoms(text, self._case()) == ["鼻塞流涕"]
+
+    def test_ignores_symptoms_present_in_case(self):
+        from app.services.symptom_guard import find_new_symptoms
+        assert find_new_symptoms("头晕乏力，还老打喷嚏", self._case()) == []
+
+    def test_notice_format(self):
+        from app.services.symptom_guard import build_notice
+        notice = build_notice(["咳嗽咳痰"])
+        assert "咳嗽咳痰" in notice
+        assert "病案未记载" in notice
+        assert "不作为辨证依据" in notice
+        assert build_notice([]) == ""
+
+    def test_appends_notice_without_mutating_original(self):
+        from app.services.agent_service import TrainingAgent
+        original = "我就是咳得厉害、痰多"
+        displayed = TrainingAgent._annotate_new_symptoms(original, self._case())
+        assert displayed.startswith(original)
+        assert "病案未记载" in displayed
+        # 入参本身不能被改，调用方还要用它入库
+        assert original == "我就是咳得厉害、痰多"
+
+    def test_clean_reply_is_untouched(self):
+        from app.services.agent_service import TrainingAgent
+        text = "头晕乏力，心里烦得很"
+        assert TrainingAgent._annotate_new_symptoms(text, self._case()) == text
+
+    def test_notice_can_be_disabled(self, monkeypatch):
+        from app.services.agent_service import TrainingAgent
+        monkeypatch.setenv("SYMPTOM_NOTICE", "0")
+        original = "我就是咳得厉害、痰多"
+        assert TrainingAgent._annotate_new_symptoms(original, self._case()) == original
