@@ -170,6 +170,31 @@ class BatchDeleteIds(BaseModel):
 
 
 # ========== 通用响应 ==========
+class AnnouncementBase(BaseModel):
+    title: str = Field(..., max_length=200, description="标题")
+    content: str = Field(..., description="正文")
+    is_active: bool = Field(True, description="是否启用；关闭后前台不可见")
+
+
+class AnnouncementCreate(AnnouncementBase):
+    pass
+
+
+class AnnouncementUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=200)
+    content: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AnnouncementResponse(AnnouncementBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class MessageResponse(BaseModel):
     message: str
     success: bool = True

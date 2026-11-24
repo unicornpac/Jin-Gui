@@ -84,6 +84,23 @@ body {
 }
 .result-item .meta { color:#8a7a6a; font-size:12px; margin-bottom:4px; }
 .result-item .source { color:#8b5a2b; font-weight:600; }
+
+/* 公告横幅 */
+.announce-bar { margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+.announce-item {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: #fffaf2; border: 1px solid #e8d5b0; border-left: 4px solid #8b5a2b;
+  border-radius: 10px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+}
+.announce-icon { font-size: 18px; line-height: 1.4; }
+.announce-body { flex: 1; min-width: 0; }
+.announce-title { font-weight: 700; color: #5c3d2e; font-size: 15px; margin-bottom: 4px; }
+.announce-content { color: #6b5847; font-size: 14px; line-height: 1.7; word-break: break-word; }
+.announce-close {
+  border: none; background: transparent; color: #b0a090; cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px;
+}
+.announce-close:hover { background: rgba(139,90,43,.1); color: #5c3d2e; }
 </style>
 <link rel="stylesheet" href="/static/jingui-theme.css?v=20260805">
 <script src="/static/jingui-motion.js?v=20260805" defer></script>
@@ -188,6 +205,41 @@ async function searchTexts() {
 
 function esc(s) { if(!s) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
+// === 公告横幅 ===
+async function loadAnnouncements() {
+  try {
+    const resp = await fetch('/api/announcements/?limit=5');
+    if (!resp.ok) return;
+    const items = await resp.json();
+    const read = JSON.parse(localStorage.getItem('ann_read') || '[]');
+    const unread = items.filter(a => !read.includes(a.id));
+    if (!unread.length) return;
+    const bar = document.getElementById('announceBar');
+    if (!bar) return;
+    bar.style.display = 'flex';
+    bar.innerHTML = unread.slice(0, 2).map(a => `
+      <div class="announce-item" id="ann-${Number(a.id)}">
+        <span class="announce-icon">📢</span>
+        <div class="announce-body">
+          <div class="announce-title">${esc(String(a.title || ''))}</div>
+          <div class="announce-content">${esc(String(a.content || '')).replace(/\n/g, '<br>')}</div>
+        </div>
+        <button class="announce-close" title="不再显示" onclick="dismissAnnounce(${Number(a.id)})">✕</button>
+      </div>`).join('');
+  } catch (e) { /* 公告失败不影响页面 */ }
+}
+
+function dismissAnnounce(id) {
+  const read = JSON.parse(localStorage.getItem('ann_read') || '[]');
+  if (!read.includes(id)) read.push(id);
+  localStorage.setItem('ann_read', JSON.stringify(read));
+  const el = document.getElementById('ann-' + id);
+  if (el) el.remove();
+  const bar = document.getElementById('announceBar');
+  if (bar && !bar.querySelector('.announce-item')) bar.style.display = 'none';
+}
+
+loadAnnouncements();
 loadStats();
 </script>
 </body>

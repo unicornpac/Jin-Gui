@@ -325,10 +325,30 @@ class TestEvaluateSessionWithScoring:
                                 "初级", ["考虑少阳枢机不利"])
         result = agent.evaluate_session(db_session, session.id)
         assert result["scoring"]["gradable"] is True
-        assert result["score"] == "57.1"
+        # 综合分 = 要点分 85% + 问诊完整度 15%；
+        # 这里学生只说了病机，没问主诉/出汗，完整度 0%，故 57.1 × 0.85 ≈ 48.5
+        assert result["score"] == "48.5"
+        assert result["scoring"]["coverage"] == 0.0
         db_session.refresh(session)
         assert session.scoring["percent"] == pytest.approx(57.1, abs=0.1)
         assert session.evaluation             # 评价原文已落库
+
+    def test_asking_key_facts_raises_score(self, db_session, agent,
+                                           sample_case_advanced):
+        """问诊完整度计入总分：问到关键信息应当加分。"""
+        sample_case_advanced.scoring_points = _CASE_POINTS
+        sample_case_advanced.key_facts = _CASE_FACTS
+        db_session.commit()
+        silent = self._prepare(db_session, agent, sample_case_advanced,
+                               "初级", ["考虑少阳枢机不利"])
+        r1 = agent.evaluate_session(db_session, silent.id)
+
+        asked = self._prepare(db_session, agent, sample_case_advanced, "初级",
+                              ["你怕冷发热吗？出汗多不多？", "考虑少阳枢机不利"])
+        r2 = agent.evaluate_session(db_session, asked.id)
+
+        assert r2["scoring"]["coverage"] > r1["scoring"]["coverage"]
+        assert float(r2["score"]) > float(r1["score"])
 
     def test_level_changes_same_answer_score(self, db_session, agent,
                                              sample_case_advanced):

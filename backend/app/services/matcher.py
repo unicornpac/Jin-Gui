@@ -3,9 +3,30 @@
 用于条文与病案的智能匹配
 """
 import re
+from functools import lru_cache
 from typing import List, Dict, Tuple
 from sqlalchemy.orm import Session
 from ..models import ClassicText, MedicalCase
+
+
+@lru_cache(maxsize=8192)
+def _simplify(text: str) -> str:
+    """繁体转简体。条文原文是繁体，病案与关键词是简体，不归一会永远匹配不上。"""
+    if not text:
+        return ""
+    try:
+        import zhconv
+        return zhconv.convert(text, "zh-cn")
+    except Exception:
+        return text
+
+
+def _disease_name(case) -> str:
+    """从「【难度】病名——证型」里取病名。"""
+    title = (case.title or "")
+    title = re.sub(r"^【[^】]*】", "", title)
+    name = title.split("——")[0].strip()
+    return name if 1 < len(name) <= 8 else ""
 
 
 class TextCaseMatcher:
@@ -110,26 +131,40 @@ class TextCaseMatcher:
         """
         score = 0.0
         total_weight = 0.0
-        
+
+        # 条文是繁体、病案是简体，先统一到简体再比
+        text_body = _simplify(text.content or "")
+        text_kw = _simplify(text.keywords or "")
+        case_symptoms = _simplify(case.symptoms or case.content or "")
+        case_content = _simplify(case.content or "")
+        case_presc = _simplify(case.prescription or case.content or "")
+
         # 1. 症状匹配 (权重: 0.4)
-        symptom_score = self._match_symptoms(text.content, case.symptoms or case.content)
+        symptom_score = self._match_symptoms(text_body, case_symptoms)
         score += symptom_score * 0.4
         total_weight += 0.4
-        
+
         # 2. 病机匹配 (权重: 0.3)
-        pathogenesis_score = self._match_pathogenesis(text.content, case.content)
+        pathogenesis_score = self._match_pathogenesis(text_body, case_content)
         score += pathogenesis_score * 0.3
         total_weight += 0.3
-        
+
         # 3. 方剂匹配 (权重: 0.2)
-        prescription_score = self._match_prescription(text.content, case.prescription or case.content)
+        prescription_score = self._match_prescription(text_body, case_presc)
         score += prescription_score * 0.2
         total_weight += 0.2
-        
+
         # 4. 关键词匹配 (权重: 0.1)
-        keyword_score = self._match_keywords(text.keywords or "", case.content)
+        keyword_score = self._match_keywords(text_kw, case_content)
         score += keyword_score * 0.1
         total_weight += 0.1
+
+        # 5. 病名命中：病案标题里的病名直接出现在条文中，是最强的信号
+        #    「胸痹之病…」对应「胸痹」病案，靠症状词表永远匹配不到
+        name = _disease_name(case)
+        if name and _simplify(name) in text_body:
+            score += 0.5
+            total_weight += 0.5
         
         # 归一化分数
         if total_weight > 0:

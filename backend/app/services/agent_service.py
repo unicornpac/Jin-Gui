@@ -1006,13 +1006,28 @@ class TrainingAgent:
         # 模型分会随温度浮动，同一场对话两次评价能差几十分。
         if scoring and scoring.get("gradable"):
             point_score = round(scoring["ratio"] * 100, 1)
-            scoring["score"] = point_score
+            # 问诊完整度也计入总分：以前只看四个结论，学生认真问了十几轮
+            # 一个要点没答对就是低分，问诊过程完全不计。
+            facts = scoring.get("key_facts") or {}
+            total_facts = facts.get("total") or 0
+            if total_facts:
+                covered = facts.get("asked", 0) + facts.get("revealed", 0)
+                coverage = covered / total_facts
+                combined = round(point_score * 0.85 + coverage * 100 * 0.15, 1)
+                scoring["coverage"] = round(coverage * 100, 1)
+            else:
+                covered, coverage, combined = 0, 0.0, point_score
+            scoring["score"] = combined
             ai_score = score
-            score = f"{point_score:g}"
+            score = f"{combined:g}"
             if evaluation_data is not None:
                 evaluation_data["AI综合评分"] = ai_score
-                evaluation_data["综合评分"] = point_score
+                evaluation_data["综合评分"] = combined
                 evaluation_data["要点得分"] = format_scoring_brief(scoring)
+                if total_facts:
+                    evaluation_data["问诊完整度"] = (
+                        f"{covered}/{total_facts}（{coverage * 100:.0f}%）"
+                    )
                 eval_text = json.dumps(evaluation_data, ensure_ascii=False, indent=2)
 
         if safety_feedback["level"] == "critical":
@@ -1035,7 +1050,8 @@ class TrainingAgent:
         session.evaluation = eval_text
         session.scoring = scoring
         db.commit()
-        dp = self._summarize_decision_path(session, all_messages)
+        final_progress = self._analyze_progress(all_messages, session) if medical_case else None
+        dp = self._summarize_decision_path(session, all_messages, final_progress, scoring)
         session.decision_path = dp; db.commit()
 
         # 匹配相关经典条文
@@ -1071,11 +1087,29 @@ class TrainingAgent:
             logger.warning("条文匹配失败: %s", e)
             return []
 
-    def _summarize_decision_path(self, session: TrainingSession, messages: List[dict]) -> str:
+    def _summarize_decision_path(self, session: TrainingSession, messages: List[dict],
+                                 progress: Optional[dict] = None,
+                                 scoring: Optional[dict] = None) -> str:
         path = [f"训练等级：{session.difficulty_level}"]
         sm = [m for m in messages if m.get("role") == "user"]
         path.append(f"交互轮数：{len(sm)}")
-        path.append("路径：辨病 → 平脉 → 析证 → 定治")
+        if progress:
+            # 按实际状态标注，未完成的阶段附一句「缺什么」——
+            # 以前这行是写死的「辨病 → 平脉 → 析证 → 定治」，不管做没做完都这么显示
+            marks = []
+            for stage in ("辨病", "平脉", "析证", "定治"):
+                if progress.get(stage):
+                    marks.append(f"{stage}[✓]")
+                else:
+                    missed = [
+                        item["text"] for item in (scoring or {}).get("points", [])
+                        if item.get("stage") == stage and item.get("hit") is False
+                    ]
+                    hint = f"：缺{missed[0][:16]}" if missed else ""
+                    marks.append(f"{stage}[未完成{hint}]")
+            path.append("路径：" + " → ".join(marks))
+        else:
+            path.append("路径：辨病 → 平脉 → 析证 → 定治")
         for i, m in enumerate(sm[:10]):
             c = m.get("content", "")
             path.append(f"第{i+1}轮：{c[:60]}{'...' if len(c)>60 else ''}")

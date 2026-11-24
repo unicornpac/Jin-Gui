@@ -165,6 +165,7 @@ tr:hover td { background:var(--hover); }
     <div class="tab" onclick="switchTab('upload')">文档上传</div>
     <div class="tab" onclick="switchTab('import')">导入审核</div>
     <div class="tab" onclick="switchTab('feedback')">用户反馈</div>
+    <div class="tab" onclick="switchTab('announce')">网站公告</div>
   </div>
 
   <!-- 训练记录 -->
@@ -293,6 +294,19 @@ tr:hover td { background:var(--hover); }
       <tbody id="fbTbody"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
     </div>
   </div>
+
+  <!-- 网站公告 -->
+  <div class="panel" id="pAnnounce">
+    <div class="card">
+      <div class="filters">
+        <button class="btn btn-primary" onclick="openAnnounceEdit()">+ 发布公告</button>
+        <button class="btn btn-view" onclick="loadAnnouncements()">刷新</button>
+        <span style="font-size:12px;color:var(--muted);">启用的公告会出现在学生首页与训练页</span>
+      </div>
+      <table><thead><tr><th>ID</th><th>标题</th><th>内容</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+      <tbody id="anTbody"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
+    </div>
+  </div>
 </div>
 
 <!-- 会话详情弹窗 -->
@@ -303,6 +317,20 @@ tr:hover td { background:var(--hover); }
     <div class="chat-replay" id="dChat"></div>
     <div style="margin-top:16px;text-align:right;">
       <button class="btn btn-primary btn-sm" onclick="document.getElementById('detailModal').classList.remove('show')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 公告编辑弹窗 -->
+<div class="modal-overlay" id="announceEditModal">
+  <div class="modal">
+    <h3 id="anModalTitle">发布公告</h3>
+    <div class="form-row"><label>标题</label><input id="anTitle" class="form-input" maxlength="200"></div>
+    <div class="form-row"><label>正文</label><textarea id="anContent" class="form-input" rows="6"></textarea></div>
+    <div class="form-row"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="anActive" checked> 立即启用（学生端可见）</label></div>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-del btn-sm" onclick="document.getElementById('announceEditModal').classList.remove('show')">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="saveAnnouncement()">保存</button>
     </div>
   </div>
 </div>
@@ -443,7 +471,7 @@ function onFilter(key) { resetPage(key); PAGER[key].load(); }
 
 
 function switchTab(n) {
-  const map = { train:'训练记录', cases:'病案管理', texts:'条文管理', upload:'文档上传', import:'导入审核', feedback:'用户反馈' };
+  const map = { train:'训练记录', cases:'病案管理', texts:'条文管理', upload:'文档上传', import:'导入审核', feedback:'用户反馈', announce:'网站公告' };
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.includes(map[n])));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('p'+n.charAt(0).toUpperCase()+n.slice(1)).classList.add('active');
@@ -453,6 +481,7 @@ function switchTab(n) {
   if (n==='upload') loadDocs();
   if (n==='import') loadBatches();
   if (n==='feedback') loadFeedbacks();
+  if (n==='announce') loadAnnouncements();
 }
 
 // === 训练记录 ===
@@ -1100,6 +1129,91 @@ function newStaging() {
   document.getElementById('seContent').value = '';
   document.getElementById('seRaw').value = '';
   document.getElementById('stagingEditModal').classList.add('show');
+}
+
+// === 网站公告管理 ===
+let announceCache = [];
+let editingAnnounceId = null;
+
+async function loadAnnouncements() {
+  try {
+    const resp = await fetch(`${API}/announcements/admin/?limit=100`);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    announceCache = data;
+    const tbody = document.getElementById('anTbody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">还没有公告</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(a => `
+      <tr>
+        <td>${Number(a.id)}</td>
+        <td>${escapeHtml(String(a.title||''))}</td>
+        <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(String(a.content||''))}">${escapeHtml(String(a.content||'')).substring(0,50)}</td>
+        <td><span class="badge ${a.is_active?'bg-active':'bg-advanced'}">${a.is_active?'启用中':'已停用'}</span></td>
+        <td style="font-size:12px;">${String(a.created_at||'').substring(0,10)}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-view btn-sm" onclick="openAnnounceEdit(${Number(a.id)})">编辑</button>
+          <button class="btn btn-view btn-sm" onclick="toggleAnnouncement(${Number(a.id)}, ${a.is_active?'false':'true'})">${a.is_active?'停用':'启用'}</button>
+          <button class="btn btn-del btn-sm" onclick="deleteAnnouncement(${Number(a.id)})">删除</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) {
+    document.getElementById('anTbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#c0392b;padding:30px;">加载失败</td></tr>';
+  }
+}
+
+function openAnnounceEdit(id) {
+  editingAnnounceId = id || null;
+  const item = id ? announceCache.find(a => a.id === id) : null;
+  document.getElementById('anModalTitle').textContent = item ? '编辑公告' : '发布公告';
+  document.getElementById('anTitle').value = item ? (item.title || '') : '';
+  document.getElementById('anContent').value = item ? (item.content || '') : '';
+  document.getElementById('anActive').checked = item ? !!item.is_active : true;
+  document.getElementById('announceEditModal').classList.add('show');
+}
+
+async function saveAnnouncement() {
+  const title = document.getElementById('anTitle').value.trim();
+  const content = document.getElementById('anContent').value.trim();
+  const isActive = document.getElementById('anActive').checked;
+  if (!title || !content) { toast('标题和正文都不能为空', 'error'); return; }
+  const body = JSON.stringify({ title, content, is_active: isActive });
+  try {
+    const url = editingAnnounceId ? `${API}/announcements/${editingAnnounceId}` : `${API}/announcements/`;
+    const resp = await fetch(url, {
+      method: editingAnnounceId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || ('HTTP ' + resp.status));
+    document.getElementById('announceEditModal').classList.remove('show');
+    toast(editingAnnounceId ? '公告已更新' : '公告已发布', 'success');
+    loadAnnouncements();
+  } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+}
+
+async function toggleAnnouncement(id, active) {
+  try {
+    const resp = await fetch(`${API}/announcements/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: active }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    toast(active ? '已启用' : '已停用', 'success');
+    loadAnnouncements();
+  } catch (e) { toast('操作失败: ' + e.message, 'error'); }
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm('确定删除这条公告？')) return;
+  try {
+    const resp = await fetch(`${API}/announcements/${id}`, { method: 'DELETE' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    toast('已删除', 'success');
+    loadAnnouncements();
+  } catch (e) { toast('删除失败: ' + e.message, 'error'); }
 }
 
 // === 用户反馈管理 ===

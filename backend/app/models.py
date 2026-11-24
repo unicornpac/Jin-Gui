@@ -4,6 +4,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from datetime import datetime
 from .database import Base
 
 
@@ -14,7 +15,7 @@ class Category(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False, comment="分类名称")
     description = Column(Text, comment="分类描述")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
 
     # 关系
     texts = relationship("ClassicText", back_populates="category")
@@ -60,8 +61,8 @@ class ClassicText(Base):
     verified = Column(Boolean, default=False, comment="是否已通过互联网比对校验")
     verified_at = Column(DateTime(timezone=True), comment="校验时间")
     source_url = Column(String(500), comment="互联网参考来源URL")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
+    updated_at = Column(DateTime(timezone=True), onupdate=datetime.now)
 
     # 关系
     category = relationship("Category", back_populates="texts")
@@ -81,7 +82,7 @@ class ImportBatch(Base):
     unique_numbers = Column(Integer, default=0, comment="识别的唯一条号数")
     status = Column(String(20), default="pending", comment="状态：pending/needs_review/published/rejected")
     quality_report = Column(Text, comment="质检报告 JSON")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
     published_at = Column(DateTime(timezone=True), comment="发布时间")
 
 
@@ -107,7 +108,7 @@ class ImportStaging(Base):
     status = Column(String(20), default="needs_review", comment="状态：needs_review/approved/rejected")
     issue = Column(String(200), comment="质量问题标记（如 duplicate/missing_chapter/empty_content）")
     duplicate_of = Column(Integer, comment="重复号：指向同 batch 中相同 article_number 的另一条，或 classic_texts 中的已有记录")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
 
     # 关系
     batch = relationship("ImportBatch", backref="staging_records", foreign_keys=[batch_id])
@@ -134,8 +135,8 @@ class MedicalCase(Base):
     key_facts = Column(JSON, comment="问诊要点，用于完整度统计")
     # scoring_points: [{"stage":"辨病","text":"...","weight":20,"keywords":[...],"min_level":"初级"}]
     scoring_points = Column(JSON, comment="评分要点，按关键词逐条对照打分")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
+    updated_at = Column(DateTime(timezone=True), onupdate=datetime.now)
 
     # 关系
     category = relationship("Category", back_populates="cases")
@@ -150,7 +151,7 @@ class TextCaseRelation(Base):
     text_id = Column(Integer, ForeignKey("classic_texts.id"), nullable=False)
     case_id = Column(Integer, ForeignKey("medical_cases.id"), nullable=False)
     similarity_score = Column(String(50), comment="相似度评分")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
 
     text = relationship("ClassicText", back_populates="related_cases")
     case = relationship("MedicalCase", back_populates="related_texts")
@@ -168,7 +169,7 @@ class Document(Base):
     parsed_content = Column(Text, comment="解析后的内容")
     status = Column(String(50), default="pending", comment="状态：pending, processing, completed, failed")
     error_message = Column(Text, comment="解析失败原因（供管理员排查与重试）")
-    upload_date = Column(DateTime(timezone=True), server_default=func.now())
+    upload_date = Column(DateTime(timezone=True), default=datetime.now)
     processed_at = Column(DateTime(timezone=True), comment="处理完成时间")
 
 
@@ -181,7 +182,7 @@ class LearningHistory(Base):
     text_id = Column(Integer, ForeignKey("classic_texts.id"), comment="关联的条文ID")
     case_id = Column(Integer, ForeignKey("medical_cases.id"), comment="关联的病案ID")
     analysis_result = Column(Text, comment="AI分析结果")
-    query_time = Column(DateTime(timezone=True), server_default=func.now())
+    query_time = Column(DateTime(timezone=True), default=datetime.now)
 
 
 class TrainingSession(Base):
@@ -203,7 +204,7 @@ class TrainingSession(Base):
     # 已通过模型复核的阶段。规则点亮某阶段后让模型确认一次，
     # 确认过的记下来，避免每轮重复调用
     verified_stages = Column(JSON, comment="已通过模型复核的思辨阶段")
-    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), default=datetime.now)
     ended_at = Column(DateTime(timezone=True), comment="结束时间")
 
     # 关系
@@ -221,7 +222,7 @@ class SessionMessage(Base):
     content = Column(Text, nullable=False, comment="消息内容")
     message_type = Column(String(30), comment="消息类型：question/hint/correction/praise/evaluation/other")
     key_decision = Column(Text, comment="关键决策点记录（如辨病完成、析证完成等）")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
 
     # 关系
     session = relationship("TrainingSession", back_populates="messages")
@@ -238,8 +239,24 @@ class Feedback(Base):
     contact = Column(String(200), comment="联系方式（可选）")
     status = Column(String(20), default="pending", comment="状态：pending/resolved/closed")
     admin_note = Column(Text, comment="管理员备注")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
     resolved_at = Column(DateTime(timezone=True), comment="处理时间")
 
     # 关系
     session = relationship("TrainingSession")
+
+
+class Announcement(Base):
+    """网站公告表
+
+    只给学生看（首页横幅 + 训练页提示）。上下线用手动开关控制，
+    不做定时生效——公告少的时候，多一个时间区间反而增加操作负担。
+    """
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False, comment="标题")
+    content = Column(Text, nullable=False, comment="正文")
+    is_active = Column(Boolean, default=True, comment="是否启用；关闭后前台不可见")
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
+    updated_at = Column(DateTime(timezone=True), onupdate=datetime.now)

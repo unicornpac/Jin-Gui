@@ -23,7 +23,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
 from .dependencies import verify_admin_page
-from .routers import texts, cases, analysis, documents, agent, import_review, feedback
+from .routers import (
+    texts, cases, analysis, documents, agent, import_review, feedback, announcements,
+)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 UI_VERSION = "20260804-2"
@@ -114,6 +116,7 @@ app.include_router(documents.router, prefix="/api/documents", tags=["文档管�
 app.include_router(agent.router, prefix="/api/agent", tags=["智能体训练"])
 app.include_router(import_review.router)
 app.include_router(feedback.router, prefix="/api/feedback", tags=["用户反馈"])
+app.include_router(announcements.router, prefix="/api/announcements", tags=["网站公告"])
 @app.get("/live", tags=["运维"], summary="存活探针")
 async def live_check():
     """进程存活探针：只要进程能响应就返回 200，供负载均衡与进程守护使用。"""

@@ -113,6 +113,18 @@
     @media(max-width:680px){body{padding-bottom:66px}.shell{width:calc(100% - 32px)}header{height:62px}.links{display:none}.brand{font-size:15px}.brand-mark{width:27px;height:27px}.hero{height:86vh;min-height:720px}.hero-inner{padding:98px 0 96px}.emblem{top:116px;right:-58px;width:185px}.seal{width:72px;height:72px;font-size:31px}.emblem small{display:none}.eyebrow{max-width:250px;font-size:9px;line-height:1.8}.hero h1{max-width:none;white-space:nowrap;font-size:clamp(46px,13vw,54px);letter-spacing:.02em}.lead{max-width:310px;margin-top:24px;font-size:16px;letter-spacing:.09em}.actions{display:grid;grid-template-columns:1fr;margin-top:28px}.hero-note{font-size:11px}.dashboard{padding:22px 0 80px}.continue{min-height:340px;padding:32px 26px}.continue h2{font-size:33px}.quick{grid-template-columns:1fr}.section{padding:80px 0}.heading{display:block;margin-bottom:34px}.index{display:block;margin-bottom:16px}.heading h2{font-size:38px}.heading p{margin-top:16px}.difficulty{grid-template-columns:1fr}.level{min-height:245px;border-right:0;border-bottom:1px solid var(--line)}.level:last-child{border-bottom:0}.level h3{margin-top:38px}.flow{grid-template-columns:1fr}.step{min-height:230px;border-right:0;border-bottom:1px solid var(--nline)}.step:last-child{border-bottom:0}.step h3{margin-top:38px}.search-card{min-height:330px;padding:30px 24px}.search button{width:86px}.path{grid-template-columns:44px 1fr auto;padding:18px;gap:12px}.path-mark{width:42px;height:42px}.stats{padding-bottom:80px}.stat{min-height:150px;padding:24px 20px}.value{font-size:36px}.quote{padding:72px 0}.quote-inner{grid-template-columns:1fr;gap:24px}.quote blockquote{font-size:28px}.last{padding:78px 0 92px}footer{display:none}.dock{position:fixed;z-index:120;right:0;bottom:0;left:0;height:66px;display:grid;grid-template-columns:repeat(3,1fr);color:rgba(239,231,215,.58);background:rgba(9,10,9,.95);border-top:1px solid rgba(255,255,255,.08);backdrop-filter:blur(16px)}.dock a{display:grid;place-items:center;align-content:center;gap:3px;color:inherit;text-decoration:none;font-size:11px}.dock a:before{content:attr(data-mark);color:var(--gold2);font:18px var(--serif)}}
     @media(max-width:680px){.hero{height:82vh;min-height:660px;margin-inline:0;border-inline:0;border-radius:0}.dashboard{min-height:auto;margin-top:0;padding:56px 0 94px}.dashboard:after{height:48px;clip-path:polygon(0 60%,100% 28%,100% 100%,0 100%)}.dashboard + .section{padding-top:62px}.continue,.quick{transform:none}.quick-card:first-child,.quick-card:last-child{margin-inline:0}}
     @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}#ink{display:none}.reveal{opacity:1;transform:none}}
+
+    /* 公告横幅 */
+    .announce-wrap{padding:0 0 26px}
+    .announce-card{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px;padding:14px 18px;border-radius:12px;
+      background:linear-gradient(145deg,rgba(25,26,23,.98),rgba(17,32,46,.92));
+      border:1px solid rgba(208,176,109,.28);border-left:3px solid #d0b06d;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+    .announce-card .ic{color:#d0b06d;font-size:16px;line-height:1.5}
+    .announce-card .bd{flex:1;min-width:0}
+    .announce-card .tt{color:#d0b06d;font-weight:600;font-size:14px;margin-bottom:5px}
+    .announce-card .cc{color:rgba(239,231,215,.78);font-size:13px;line-height:1.75;word-break:break-word}
+    .announce-card .xx{border:none;background:transparent;color:rgba(239,231,215,.45);cursor:pointer;font-size:15px;padding:2px 5px;border-radius:4px}
+    .announce-card .xx:hover{background:rgba(208,176,109,.12);color:#d0b06d}
   </style>
   <link rel="stylesheet" href="/static/jingui-theme.css?v=20260805">
 </head>
@@ -133,6 +145,10 @@
       <p class="hero-note"><span class="dot"></span><span id="hero-state">正在读取学习进展</span></p>
     </div>
     <div class="emblem" aria-hidden="true"><div class="ring"></div><div class="seal">辨</div><small>OBSERVE · DISCERN · DECIDE</small></div>
+  </div></section>
+
+  <section class="announce-wrap" id="announceSection" style="display:none"><div class="shell">
+    <div id="announceBar"></div>
   </div></section>
 
   <main id="main">
@@ -187,6 +203,45 @@
     if(!reduced){const c=document.getElementById('ink'),ctx=c.getContext('2d');let w,h,dots=[],frame;
       function resize(){const r=Math.min(devicePixelRatio||1,1.5);w=c.clientWidth;h=c.clientHeight;c.width=Math.round(w*r);c.height=Math.round(h*r);ctx.setTransform(r,0,0,r,0,0);dots=Array.from({length:w<680?12:22},()=>({x:Math.random()*w,y:Math.random()*h,r:18+Math.random()*66,vx:(Math.random()-.5)*.13,vy:-.04-Math.random()*.12,a:.02+Math.random()*.055,warm:Math.random()>.65}))}
       function draw(){ctx.clearRect(0,0,w,h);dots.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.y<-p.r)p.y=h+p.r;if(p.x<-p.r)p.x=w+p.r;if(p.x>w+p.r)p.x=-p.r;const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r),color=p.warm?'183,146,77':'228,218,199';g.addColorStop(0,`rgba(${color},${p.a})`);g.addColorStop(1,`rgba(${color},0)`);ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill()});frame=requestAnimationFrame(draw)}resize();draw();addEventListener('resize',resize,{passive:true});document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAnimationFrame(frame);else draw()})}
-  </script>
+  
+// === 网站公告 ===
+async function loadAnnouncements(){
+  try{
+    const resp = await fetch('/api/announcements/?limit=5');
+    if(!resp.ok) return;
+    const items = await resp.json();
+    const read = JSON.parse(localStorage.getItem('ann_read') || '[]');
+    const unread = items.filter(a => !read.includes(a.id));
+    if(!unread.length) return;
+    const sec = document.getElementById('announceSection');
+    const bar = document.getElementById('announceBar');
+    if(!sec || !bar) return;
+    sec.style.display = 'block';
+    bar.innerHTML = unread.slice(0,2).map(a => `
+      <div class="announce-card" id="ann-${Number(a.id)}">
+        <span class="ic">📢</span>
+        <div class="bd">
+          <div class="tt">${escHtml(String(a.title||''))}</div>
+          <div class="cc">${escHtml(String(a.content||'')).replace(/\n/g,'<br>')}</div>
+        </div>
+        <button class="xx" title="不再显示" onclick="dismissAnnounce(${Number(a.id)})">✕</button>
+      </div>`).join('');
+  }catch(e){/* 公告失败不影响首页 */}
+}
+function dismissAnnounce(id){
+  const read = JSON.parse(localStorage.getItem('ann_read') || '[]');
+  if(!read.includes(id)) read.push(id);
+  localStorage.setItem('ann_read', JSON.stringify(read));
+  const el = document.getElementById('ann-' + id);
+  if(el) el.remove();
+  const bar = document.getElementById('announceBar');
+  if(bar && !bar.querySelector('.announce-card')){
+    document.getElementById('announceSection').style.display = 'none';
+  }
+}
+function escHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+loadAnnouncements();
+
+</script>
 </body>
 </html>
