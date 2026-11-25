@@ -119,7 +119,6 @@
     .announce-card{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px;padding:14px 18px;border-radius:12px;
       background:linear-gradient(145deg,rgba(25,26,23,.98),rgba(17,32,46,.92));
       border:1px solid rgba(208,176,109,.28);border-left:3px solid #d0b06d;box-shadow:0 8px 24px rgba(0,0,0,.2)}
-    .announce-card .ic{color:#d0b06d;font-size:16px;line-height:1.5}
     .announce-card .bd{flex:1;min-width:0}
     .announce-card .tt{color:#d0b06d;font-weight:600;font-size:14px;margin-bottom:5px}
     .announce-card .cc{color:rgba(239,231,215,.78);font-size:13px;line-height:1.75;word-break:break-word}
@@ -219,7 +218,6 @@ async function loadAnnouncements(){
     sec.style.display = 'block';
     bar.innerHTML = unread.slice(0,2).map(a => `
       <div class="announce-card" id="ann-${Number(a.id)}">
-        <span class="ic">📢</span>
         <div class="bd">
           <div class="tt">${escHtml(String(a.title||''))}</div>
           <div class="cc">${escHtml(String(a.content||'')).replace(/\n/g,'<br>')}</div>

@@ -1181,6 +1181,24 @@ ADMIN_PASSWORD=请在服务器环境中配置
   `examinations` 缺 12 条，学生号脉看舌会撞到「本例未记录」。
 - **涉及文件**：`tools/generate_scoring.py`、`backend/static/train.html`
 
+**访问量统计模块（2026-11-25）**
+
+- **需求**：做成与「条文管理」同级的独立模块，而不是一个小卡片。
+- **数据**：`page_visits` 表（path / client_ip / created_at），迁移 `f6a82b1d3e94`
+  （接在另一个对话的 `f4a1b2c3d4e5` 之后，链条已线性化）。
+- **采集**：`main.py` 中间件，只记 `/user`、`/train`、`/study` 三个页面的 GET 200 请求，
+  API 与静态资源不计——否则轮询接口会把数字撑爆。统计失败不影响页面返回。
+- **接口**（`routers/stats.py`）：
+  - `GET /api/stats/visits` 概览（今日/昨日/7 天/累计 + 分页面 + 逐日）；
+  - `GET /api/stats/visits/summary` 面板顶部聚合，支持 `days`；
+  - `GET /api/stats/visits/list` 明细分页（`skip/limit/path/days`），总数走 `X-Total-Count` 头。
+- **前端**：管理端新增「访问统计」标签页——四张统计卡、天数与页面筛选、逐日柱状趋势、
+  页面分布、明细表（20 条/页，上下页）。样式全部复用既有 `.stats`/`.stat-card`/`.filter`/`.pager`，
+  无表情符号。
+- **验证**：全量 `294 passed`；本地与生产接口实测通过（今日/分页面/明细分页正确）。
+- **遗留**：本机 `127.0.0.1:8000` 被一个查不到的旧监听占用（PID 95048，taskkill 报 not found），
+  浏览器需用 `10.112.24.113:8000`，重启电脑后恢复。
+
 ### 2026-11-09 会话记录
 
 **诊法直出（结构化改造第一步）**

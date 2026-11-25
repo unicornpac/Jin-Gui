@@ -166,18 +166,7 @@ tr:hover td { background:var(--hover); }
     <div class="tab" onclick="switchTab('import')">导入审核</div>
     <div class="tab" onclick="switchTab('feedback')">用户反馈</div>
     <div class="tab" onclick="switchTab('announce')">网站公告</div>
-  </div>
-
-  <!-- 访问统计 -->
-  <div class="stats" id="visitStats">
-    <div class="stat-card"><div class="n" id="vsToday">–</div><div class="l">今日访问</div></div>
-    <div class="stat-card"><div class="n" id="vsYesterday">–</div><div class="l">昨日访问</div></div>
-    <div class="stat-card"><div class="n" id="vsWeek">–</div><div class="l">近 7 天</div></div>
-    <div class="stat-card"><div class="n" id="vsTotal">–</div><div class="l">累计访问</div></div>
-  </div>
-  <div class="card" id="visitChartCard" style="display:none;">
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">近 7 天访问趋势</div>
-    <div id="vsChart" style="display:flex;align-items:flex-end;gap:8px;height:70px;"></div>
+    <div class="tab" onclick="switchTab('stats')">访问统计</div>
   </div>
 
   <!-- 训练记录 -->
@@ -291,6 +280,47 @@ tr:hover td { background:var(--hover); }
       <div id="bdReport" style="margin-bottom:12px;padding:12px;background:#faf7f0;border-radius:8px;font-size:13px;"></div>
       <table><thead><tr><th>条号</th><th>章节</th><th>正文预览</th><th>版式标记</th><th>状态</th><th>问题</th><th>操作</th></tr></thead>
       <tbody id="stagingTbody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- 访问统计 -->
+  <div class="panel" id="pStats">
+    <div class="stats">
+      <div class="stat-card"><div class="n" id="vsToday">–</div><div class="l">今日访问</div></div>
+      <div class="stat-card"><div class="n" id="vsYesterday">–</div><div class="l">昨日访问</div></div>
+      <div class="stat-card"><div class="n" id="vsWeek">–</div><div class="l">近 7 天</div></div>
+      <div class="stat-card"><div class="n" id="vsTotal">–</div><div class="l">累计访问</div></div>
+    </div>
+
+    <div class="card">
+      <div class="filters">
+        <select id="vsDays" onchange="loadVisitSummary()">
+          <option value="7">近 7 天</option>
+          <option value="14" selected>近 14 天</option>
+          <option value="30">近 30 天</option>
+        </select>
+        <select id="vsPathFilter" onchange="loadVisitList(0)">
+          <option value="">全部页面</option>
+          <option value="/user">首页 /user</option>
+          <option value="/train">训练页 /train</option>
+          <option value="/study">研习页 /study</option>
+        </select>
+        <button class="btn btn-primary" onclick="refreshStats()">刷新</button>
+        <span class="ce-hint" id="vsRangeHint"></span>
+      </div>
+      <div id="vsTrend" style="display:flex;align-items:flex-end;gap:6px;height:130px;padding:6px 0 4px;"></div>
+      <div style="display:flex;gap:24px;font-size:13px;color:var(--muted);margin:6px 0 16px;">
+        <span>首页 <b id="vsPageUser" style="color:var(--text);">–</b></span>
+        <span>训练页 <b id="vsPageTrain" style="color:var(--text);">–</b></span>
+        <span>研习页 <b id="vsPageStudy" style="color:var(--text);">–</b></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:12px;">访问明细</h3>
+      <table><thead><tr><th>ID</th><th>页面</th><th>来源 IP</th><th>时间</th></tr></thead>
+      <tbody id="vsTbody"><tr><td colspan="4" style="text-align:center;color:var(--muted);padding:30px;">加载中…</td></tr></tbody></table>
+      <div class="pager" id="vsPager"></div>
     </div>
   </div>
 
@@ -483,17 +513,18 @@ function onFilter(key) { resetPage(key); PAGER[key].load(); }
 
 
 function switchTab(n) {
-  const map = { train:'训练记录', cases:'病案管理', texts:'条文管理', upload:'文档上传', import:'导入审核', feedback:'用户反馈', announce:'网站公告' };
+  const map = { train:'训练记录', cases:'病案管理', texts:'条文管理', upload:'文档上传', import:'导入审核', feedback:'用户反馈', announce:'网站公告', stats:'访问统计' };
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.includes(map[n])));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('p'+n.charAt(0).toUpperCase()+n.slice(1)).classList.add('active');
-  if (n==='train') { loadTrain(); loadVisitStats(); }
+  if (n==='train') loadTrain();
   if (n==='cases') loadCases();
   if (n==='texts') loadTexts();
   if (n==='upload') loadDocs();
   if (n==='import') loadBatches();
   if (n==='feedback') loadFeedbacks();
   if (n==='announce') loadAnnouncements();
+  if (n==='stats') { loadVisitSummary(); loadVisitList(0); }
 }
 
 // === 训练记录 ===
@@ -1145,28 +1176,66 @@ function newStaging() {
 
 
 // === 访问统计 ===
-async function loadVisitStats() {
+let statsPage = 0;
+const STATS_LIMIT = 20;
+
+async function loadVisitSummary() {
+  const days = Number(document.getElementById('vsDays').value || 14);
   try {
-    const resp = await fetch(`${API}/stats/visits?days=7`);
+    const resp = await fetch(`${API}/stats/visits/summary?days=${days}`);
     if (!resp.ok) return;
     const s = await resp.json();
     document.getElementById('vsToday').textContent = s.today;
     document.getElementById('vsYesterday').textContent = s.yesterday;
     document.getElementById('vsWeek').textContent = s.week;
     document.getElementById('vsTotal').textContent = s.total;
+    document.getElementById('vsPageUser').textContent = s.by_page['/user'] || 0;
+    document.getElementById('vsPageTrain').textContent = s.by_page['/train'] || 0;
+    document.getElementById('vsPageStudy').textContent = s.by_page['/study'] || 0;
+    document.getElementById('vsRangeHint').textContent = `统计范围：近 ${days} 天`;
 
-    const max = Math.max(...s.daily.map(d => d.count), 1);
-    document.getElementById('visitChartCard').style.display = 'block';
-    document.getElementById('vsChart').innerHTML = s.daily.map(d => {
-      const h = Math.max(3, Math.round(d.count / max * 46));
-      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;">
-        <div style="width:100%;max-width:38px;height:${h}px;background:${d.count ? 'var(--primary)' : '#e8d5b0'};border-radius:3px;opacity:.85;"></div>
-        <div style="font-size:11px;color:var(--muted);">${d.date}</div>
-        <div style="font-size:11px;color:var(--text);">${d.count}</div>
+    const max = Math.max(...s.daily.map(x => x.count), 1);
+    document.getElementById('vsTrend').innerHTML = s.daily.map(x => {
+      const h = Math.max(4, Math.round(x.count / max * 96));
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;min-width:0;">
+        <div style="font-size:11px;color:var(--muted);">${x.count || ''}</div>
+        <div style="width:100%;max-width:34px;height:${h}px;background:${x.count ? 'var(--primary)' : '#e8d5b0'};border-radius:3px;opacity:.85;"></div>
+        <div style="font-size:10px;color:var(--muted);">${x.date}</div>
       </div>`;
     }).join('');
-  } catch (e) { /* 统计失败不影响其他面板 */ }
+  } catch (e) { /* 忽略 */ }
 }
+
+async function loadVisitList(page) {
+  statsPage = page || 0;
+  const path = document.getElementById('vsPathFilter').value;
+  let url = `${API}/stats/visits/list?skip=${statsPage * STATS_LIMIT}&limit=${STATS_LIMIT}`;
+  if (path) url += `&path=${encodeURIComponent(path)}`;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const total = Number(resp.headers.get('X-Total-Count') || data.length);
+    const tbody = document.getElementById('vsTbody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:30px;">暂无记录</td></tr>';
+    } else {
+      tbody.innerHTML = data.map(v => `<tr>
+        <td>${v.id}</td>
+        <td>${escapeHtml(String(v.path || ''))}</td>
+        <td>${escapeHtml(String(v.client_ip || '–'))}</td>
+        <td style="font-size:12px;">${String(v.created_at || '').substring(0, 19)}</td>
+      </tr>`).join('');
+    }
+    const pages = Math.max(1, Math.ceil(total / STATS_LIMIT));
+    document.getElementById('vsPager').innerHTML = `
+      <button class="btn btn-view btn-sm" onclick="loadVisitList(${Math.max(0, statsPage - 1)})" ${statsPage <= 0 ? 'disabled' : ''}>上一页</button>
+      <span style="margin:0 10px;font-size:13px;color:var(--muted);">${statsPage + 1} / ${pages}（共 ${total} 条）</span>
+      <button class="btn btn-view btn-sm" onclick="loadVisitList(${Math.min(pages - 1, statsPage + 1)})" ${statsPage >= pages - 1 ? 'disabled' : ''}>下一页</button>`;
+  } catch (e) { /* 忽略 */ }
+}
+
+function refreshStats() { loadVisitSummary(); loadVisitList(statsPage); }
 
 // === 网站公告管理 ===
 let announceCache = [];
