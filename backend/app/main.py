@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
 from .dependencies import verify_admin_page
 from .routers import (
-    texts, cases, analysis, documents, agent, import_review, feedback, announcements,
+    texts, cases, analysis, documents, agent, import_review, feedback, announcements, stats,
 )
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -75,6 +75,27 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def track_page_visit(request: Request, call_next):
+    """记录学生端页面访问量。只认这三个页面，API 与静态资源不计。"""
+    response = await call_next(request)
+    try:
+        path = request.url.path
+        if (request.method == "GET" and path in ("/user", "/train", "/study")
+                and response.status_code == 200):
+            from .database import SessionLocal
+            from .models import PageVisit
+            with SessionLocal() as db:
+                db.add(PageVisit(
+                    path=path,
+                    client_ip=request.client.host if request.client else None,
+                ))
+                db.commit()
+    except Exception:
+        pass  # 统计失败不能影响页面返回
+    return response
+
+
+@app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     """为每个请求注入 X-Request-ID，贯穿日志和响应头"""
     rid = request.headers.get("X-Request-ID", "") or os.urandom(8).hex()
@@ -117,6 +138,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["智能体训练"])
 app.include_router(import_review.router)
 app.include_router(feedback.router, prefix="/api/feedback", tags=["用户反馈"])
 app.include_router(announcements.router, prefix="/api/announcements", tags=["网站公告"])
+app.include_router(stats.router, prefix="/api/stats", tags=["访问统计"])
 @app.get("/live", tags=["运维"], summary="存活探针")
 async def live_check():
     """进程存活探针：只要进程能响应就返回 200，供负载均衡与进程守护使用。"""

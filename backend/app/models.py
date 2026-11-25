@@ -262,3 +262,17 @@ class Announcement(Base):
     is_active = Column(Boolean, default=True, comment="是否启用；关闭后前台不可见")
     created_at = Column(DateTime(timezone=True), default=datetime.now)
     updated_at = Column(DateTime(timezone=True), onupdate=datetime.now)
+
+
+class PageVisit(Base):
+    """学生端页面访问记录。
+
+    只记 /user、/train、/study 这几个页面请求，不记 API 与静态资源——
+    否则轮询接口会把访问量撑成假数据。
+    """
+    __tablename__ = "page_visits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    path = Column(String(120), nullable=False, index=True, comment="页面路径")
+    client_ip = Column(String(64), comment="来源 IP")
+    created_at = Column(DateTime(timezone=True), default=datetime.now, index=True)

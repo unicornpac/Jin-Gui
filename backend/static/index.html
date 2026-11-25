@@ -168,6 +168,18 @@ tr:hover td { background:var(--hover); }
     <div class="tab" onclick="switchTab('announce')">网站公告</div>
   </div>
 
+  <!-- 访问统计 -->
+  <div class="stats" id="visitStats">
+    <div class="stat-card"><div class="n" id="vsToday">–</div><div class="l">今日访问</div></div>
+    <div class="stat-card"><div class="n" id="vsYesterday">–</div><div class="l">昨日访问</div></div>
+    <div class="stat-card"><div class="n" id="vsWeek">–</div><div class="l">近 7 天</div></div>
+    <div class="stat-card"><div class="n" id="vsTotal">–</div><div class="l">累计访问</div></div>
+  </div>
+  <div class="card" id="visitChartCard" style="display:none;">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">近 7 天访问趋势</div>
+    <div id="vsChart" style="display:flex;align-items:flex-end;gap:8px;height:70px;"></div>
+  </div>
+
   <!-- 训练记录 -->
   <div class="panel active" id="pTrain">
     <div class="card">
@@ -475,7 +487,7 @@ function switchTab(n) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.includes(map[n])));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('p'+n.charAt(0).toUpperCase()+n.slice(1)).classList.add('active');
-  if (n==='train') loadTrain();
+  if (n==='train') { loadTrain(); loadVisitStats(); }
   if (n==='cases') loadCases();
   if (n==='texts') loadTexts();
   if (n==='upload') loadDocs();
@@ -1129,6 +1141,31 @@ function newStaging() {
   document.getElementById('seContent').value = '';
   document.getElementById('seRaw').value = '';
   document.getElementById('stagingEditModal').classList.add('show');
+}
+
+
+// === 访问统计 ===
+async function loadVisitStats() {
+  try {
+    const resp = await fetch(`${API}/stats/visits?days=7`);
+    if (!resp.ok) return;
+    const s = await resp.json();
+    document.getElementById('vsToday').textContent = s.today;
+    document.getElementById('vsYesterday').textContent = s.yesterday;
+    document.getElementById('vsWeek').textContent = s.week;
+    document.getElementById('vsTotal').textContent = s.total;
+
+    const max = Math.max(...s.daily.map(d => d.count), 1);
+    document.getElementById('visitChartCard').style.display = 'block';
+    document.getElementById('vsChart').innerHTML = s.daily.map(d => {
+      const h = Math.max(3, Math.round(d.count / max * 46));
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;">
+        <div style="width:100%;max-width:38px;height:${h}px;background:${d.count ? 'var(--primary)' : '#e8d5b0'};border-radius:3px;opacity:.85;"></div>
+        <div style="font-size:11px;color:var(--muted);">${d.date}</div>
+        <div style="font-size:11px;color:var(--text);">${d.count}</div>
+      </div>`;
+    }).join('');
+  } catch (e) { /* 统计失败不影响其他面板 */ }
 }
 
 // === 网站公告管理 ===
