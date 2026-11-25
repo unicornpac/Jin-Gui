@@ -8,6 +8,9 @@ API 端点：
 - POST /api/agent/session/{id}/evaluate — 结束并评价
 - GET  /api/agent/sessions           — 获取会话列表
 """
+import re
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -30,6 +33,25 @@ from ..schemas import (
 from ..services.agent_service import get_agent, TrainingAgent
 from ..services.session_token import issue_session_token, verify_session_token
 from ..services.guidance import build_guidance
+
+def _trim_answer(answer: str, level: str) -> str:
+    """按难度揭晓答案：初级只给辨病，中级给到析证，高级才给完整方案。"""
+    if not answer:
+        return answer
+    if level == "高级":
+        return answer
+    keep = ("【辨病】", "【平脉】", "【析证】") if level == "中级" else ("【辨病】",)
+    parts = re.split(r"(?=【[^】]+】)", answer)
+    picked = [p for p in parts if any(p.startswith(k) for k in keep)]
+    return "".join(picked).strip() or answer
+
+
+def _trim_safety(feedback: dict, level: str) -> dict:
+    """初级/中级不要求定治，别把「治疗方案未形成」当成问题报给学生。"""
+    if level in ("初级", "中级") and (feedback or {}).get("title") == "治疗方案未形成":
+        return {"level": "pass", "title": "", "summary": "", "details": []}
+    return feedback
+
 
 router = APIRouter()
 
@@ -87,6 +109,7 @@ def start_session(
         )
         return SessionStartResponse(
             session_id=session.id,
+            case_id=session.case_id,
             difficulty_level=session.difficulty_level,
             case_title=session.case.title if session.case else "未知病案",
             agent_message=opening,
@@ -224,10 +247,11 @@ def evaluate_session(
             evaluation=session.evaluation or session.decision_path or "",
             decision_path=session.decision_path or "",
             case_title=case.title if case else None,
-            case_correct_answer=case.correct_answer if case else None,
+            case_correct_answer=_trim_answer(case.correct_answer, session.difficulty_level) if case else None,
             related_texts=[],
-            safety_feedback=assess_treatment_safety(
-                messages, case.prescription if case else None
+            safety_feedback=_trim_safety(
+                assess_treatment_safety(messages, case.prescription if case else None),
+                session.difficulty_level,
             ),
             scoring=session.scoring,
         )
@@ -240,9 +264,9 @@ def evaluate_session(
             evaluation=result["evaluation"],
             decision_path=result["decision_path"],
             case_title=case.title if case else None,
-            case_correct_answer=case.correct_answer if case else None,
+            case_correct_answer=_trim_answer(case.correct_answer, session.difficulty_level) if case else None,
             related_texts=result.get("related_texts", []),
-            safety_feedback=result.get("safety_feedback"),
+            safety_feedback=_trim_safety(result.get("safety_feedback") or {}, session.difficulty_level),
             scoring=result.get("scoring"),
         )
     except ValueError as e:
@@ -294,6 +318,23 @@ async def list_sessions(
     _admin: str = Depends(verify_admin),
 ):
     """获取训练会话列表（教师端可用）"""
+    # 惰性清理：学生关掉页面后会话会一直挂在 active，完成率永远算不准。
+    # 超过 24 小时没有任何新消息的，视为放弃（abandoned），统计时单独算。
+    cutoff = datetime.now() - timedelta(hours=24)
+    stale = db.query(TrainingSession).filter(
+        TrainingSession.status == "active",
+        TrainingSession.started_at < cutoff,
+    ).all()
+    dirty = False
+    for s in stale:
+        last_at = max((m.created_at for m in s.messages if m.created_at), default=s.started_at)
+        if last_at and last_at < cutoff:
+            s.status = "abandoned"
+            s.ended_at = last_at
+            dirty = True
+    if dirty:
+        db.commit()
+
     query = db.query(TrainingSession)
     
     if student_id:

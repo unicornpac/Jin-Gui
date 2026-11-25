@@ -204,6 +204,8 @@ class TrainingSession(Base):
     # 已通过模型复核的阶段。规则点亮某阶段后让模型确认一次，
     # 确认过的记下来，避免每轮重复调用
     verified_stages = Column(JSON, comment="已通过模型复核的思辨阶段")
+    wrong_diagnosis_count = Column(Integer, default=0, nullable=False,
+                                   comment="辨病连续答错次数，满 3 次强制结束")
     started_at = Column(DateTime(timezone=True), default=datetime.now)
     ended_at = Column(DateTime(timezone=True), comment="结束时间")
 

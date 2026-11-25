@@ -213,6 +213,7 @@ class SessionStartRequest(BaseModel):
 class SessionStartResponse(BaseModel):
     """开始训练会话响应"""
     session_id: int
+    case_id: int = Field(..., description="本次病案 ID，换难度重练时回传")
     difficulty_level: str
     case_title: str
     agent_message: str = Field(..., description="智能体的开场引导消息")

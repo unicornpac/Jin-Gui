@@ -79,6 +79,13 @@ DEFAULT_PROGRESS_CHECK_INTERVAL = 3
 
 # ==================== 智能体服务类 ====================
 
+# 学生常把病类当病名说，这些不是中医诊断
+VAGUE_DISEASE_WORDS = (
+    "情志病", "心病", "胃病", "肝病", "肺病", "肾病", "脾病",
+    "妇科病", "男科病", "皮肤病", "关节病", "虚病",
+)
+
+
 class TrainingAgent:
 
     STAGES = ["辨病", "平脉", "析证", "定治"]
@@ -343,6 +350,15 @@ class TrainingAgent:
             MedicalCase.difficulty_level == difficulty_level).order_by(sqlfunc.random()).all()
         return cases[0] if cases else db.query(MedicalCase).order_by(sqlfunc.random()).first()
 
+    # 开场先讲清这次要做什么，否则学生不知道初级只需要病名，直接跳到开方
+    LEVEL_INTRO = {
+        "初级": "（本难度仅要求说出中医诊断（病名），不必辨证型，也不用开方。"
+                "例如：痹病、喘证、黄疸、胸痹。）",
+        "中级": "（本难度要求：辨病 → 号脉 → 析证。说出病名、脉象含义与病机，"
+                "并与相近的证做一组鉴别。）",
+        "高级": "（本难度要求：辨病 → 平脉 → 析证 → 定治。除辨证外，还要给出治法方药与选方理由。）",
+    }
+
     def _generate_opening(self, session: TrainingSession, medical_case: MedicalCase) -> str:
         level = session.difficulty_level
         classic_ctx = self._detect_classic_context(medical_case)
@@ -352,11 +368,12 @@ class TrainingAgent:
         system_prompt = prompt_cls.format(
             classic_context=classic_ctx, guard=SAFETY_GUARD, case_info=case_info,
             step1_status="未完成", step2_status="未完成", step3_status="未完成")
+        intro = self.LEVEL_INTRO.get(level, "") + "\n\n"
         if self.client:
             resp = self._call_llm(system_prompt, [],
                 "请开始吧。用患者的口吻，向'医生'描述你现在哪里不舒服。口语化，像个真的病人。不透露病名。")
-            if resp: return resp
-        return "医生你好，我最近身体不太舒服，想让你帮我看看……"
+            if resp: return intro + resp
+        return intro + "医生你好，我最近身体不太舒服，想让你帮我看看……"
 
     # ---------- 多轮对话 ----------
 
@@ -415,7 +432,8 @@ class TrainingAgent:
                 ))
                 db.commit()
                 should_end = self._should_end_session(
-                    history, progress, session.difficulty_level
+                    self._count_session_messages(db, session_id),
+                    progress, session.difficulty_level
                 )
                 session_status = "completed" if should_end else "active"
                 if should_end:
@@ -456,6 +474,13 @@ class TrainingAgent:
                 session, progress, history, session.difficulty_level
             )
 
+            # 辨病连续答错计数：说对清零，说错加一，满 3 次强制结束
+            if progress.get("辨病"):
+                session.wrong_diagnosis_count = 0
+            elif progress.get("辨病错误"):
+                session.wrong_diagnosis_count = (session.wrong_diagnosis_count or 0) + 1
+            progress["wrong_diagnosis_count"] = session.wrong_diagnosis_count or 0
+
             # history 已包含刚存入的学生消息；传给 _call_llm 时只追加一次当前输入。
             reply_history = self._history_before_current_input(history, student_content)
             
@@ -476,8 +501,27 @@ class TrainingAgent:
                 system_prompt, reply_history, student_content
             ) or "【系统】AI 返回为空，请重新发送消息。"
 
+            # 辨病成立后，患者必须明确表示「被说中」。模型常常仍然往下问
+            # （"我不太懂，您说说我是啥毛病"），学生根本不知道自己说对了没有。
+            # 这里做代码兜底：整段对话里还没确认过，就补一句。
+            if progress.get("辨病"):
+                _confirmed = any(
+                    m.get("role") == "assistant"
+                    and re.search(r"对对|说中|就是这|这么回事|没错|您说的这", m.get("content") or "")
+                    for m in history
+                )
+                if not _confirmed and not re.search(r"对对|说中|就是这|这么回事|没错", agent_response):
+                    # 只确认还不够——正文常跟着一句「我不太懂，您说我到底是啥毛病」，
+                    # 等于又把球踢回来，学生还是不知道自己说对没有
+                    body = re.sub(r"[，。；\s]*((这个|我)?(也)?不太懂|我也不懂|您(能)?(说说|告诉)我[^。？！]*)[。？！]?",
+                                  "", agent_response).strip()
+                    agent_response = "（患者连连点头）对对，就是您说的这毛病！" + (
+                        body or "那我这该咋办？")
+
             # 患者不懂医：医生说病名/证型时不能用「说得对/有道理」给判断打分。
-            if self._is_confirming_judgement(student_content, agent_response):
+            # 但辨病已经判定成立时，患者就该确认「被说中」——否则学生分不清自己说对没有。
+            if (self._is_confirming_judgement(student_content, agent_response)
+                    and not progress.get("辨病")):
                 logger.info("患者回复确认了医生的判断，已替换为隐晦回应")
                 agent_response = self._hedged_reply()
                 msg_type = "hint"
@@ -499,7 +543,10 @@ class TrainingAgent:
             # 注记只进返回给前端的文本，不进上面这条消息，避免下一轮模型跟着学。
             display_response = self._annotate_new_symptoms(agent_response, medical_case)
 
-            should_end = self._should_end_session(history, progress, session.difficulty_level)
+            should_end = self._should_end_session(
+                self._count_session_messages(db, session_id),
+                progress, session.difficulty_level
+            )
             session_status = "completed" if should_end else "active"
             if should_end:
                 session.status = "completed"
@@ -649,6 +696,19 @@ class TrainingAgent:
         # 剔掉「与太阳表虚鉴别」这类子句：鉴别对象不是学生自己的辨病结论
         disease_text = re.sub(r"与[^，。；]{0,12}(?:鉴别|区别|相鉴)", " ", all_text)
         disease_hit = any(k in disease_text for k in DISEASE_KEYWORDS)
+
+        # 病案的正确病名（标题「【难度】病名——证型」的第一段）
+        case_name = ""
+        _case = getattr(session, "case", None)
+        if _case is not None:
+            _title = re.sub(r"^【[^】]*】", "", _case.title or "")
+            case_name = _title.split("——")[0].strip()
+        # 说了病名但不是本病案那个 → 记下来，由 guidance 明确告知，而不是当成完成
+        disease_wrong = bool(disease_hit and case_name and case_name not in disease_text)
+
+        # 「情志病」「心病」这类笼统说法不是中医诊断，学生以为说了就算，得明确要求具体病名。
+        # 用固定词表而不是正则——正则会把「为是情志病」整串吃掉。
+        vague_names = [w for w in VAGUE_DISEASE_WORDS if w in disease_text]
         # 平脉看的是「有没有真的做切诊」，而不是有没有提到「脉」字
         pulse_done = "pulse" in set(session.examinations_done or [])
         patho_hit = any(k in all_text for k in PATHOGENESIS_KEYWORDS)
@@ -662,9 +722,13 @@ class TrainingAgent:
         level = session.difficulty_level
 
         if level == "初级":
-            if disease_hit and turns >= 2:
+            if disease_hit and turns >= 2 and not disease_wrong:
                 progress["辨病"] = True
                 progress["current_stage"] = "主证识别"
+            elif disease_wrong and turns >= 2:
+                progress["辨病错误"] = True
+            elif vague_names and not disease_hit and turns >= 2:
+                progress["辨病模糊"] = vague_names[-1]
             merged = self._merge_ai_progress(progress, ai_progress, treatment_assessment)
             # 初级只有「辨病 / 主证识别」两态：辨病一旦成立，阶段名跟着走，
             # 不能用模型给的，也不能停在初始值
@@ -672,9 +736,11 @@ class TrainingAgent:
                 merged["current_stage"] = "主证识别"
             return merged
 
-        if disease_hit and turns >= 2:
+        if disease_hit and turns >= 2 and not disease_wrong:
             progress["辨病"] = True
             progress["current_stage"] = "平脉"
+        elif disease_wrong and turns >= 2:
+            progress["辨病错误"] = True
         if progress["辨病"] and pulse_done:
             progress["平脉"] = True
             progress["current_stage"] = "析证"
@@ -873,6 +939,10 @@ class TrainingAgent:
             parts.append(f"【教学要点——据此引导学生】{medical_case.teaching_points[:500]}")
         if include_reference and medical_case.correct_answer:
             parts.append(f"【参考答案——评判正误】{medical_case.correct_answer[:600]}")
+        if not include_reference and not (medical_case.examinations or {}):
+            # 这类病案原文没记脉舌，学生一问就会撞空——开场就说清楚，别让他反复试
+            parts.append("（本例病案没有脉象和舌象记录。若医生要求切诊，如实说没查过，"
+                         "并提醒他可以直接问诊辨证）")
         return "\n".join(parts)
 
     def _classify_response(self, response: str) -> str:
@@ -881,8 +951,13 @@ class TrainingAgent:
     def _extract_decision_point(self, student: str, agent: str, progress: dict) -> Optional[str]:
         return extract_decision_point(student, agent, progress)
 
-    def _should_end_session(self, history: List[dict], progress: dict, level: str) -> bool:
-        return should_end_session(history, progress, level)
+    def _should_end_session(self, turn_count: int, progress: dict, level: str) -> bool:
+        return should_end_session(turn_count, progress, level)
+
+    def _count_session_messages(self, db: Session, session_id: int) -> int:
+        """会话真实消息总数——不能用上下文窗口的长度代替。"""
+        return db.query(sqlfunc.count(SessionMessage.id)).filter(
+            SessionMessage.session_id == session_id).scalar() or 0
 
     # ---------- 评价 ----------
 
@@ -1043,7 +1118,10 @@ class TrainingAgent:
             else:
                 eval_text += f"\n\n【用药安全复盘】{safety_feedback['summary']}"
         elif evaluation_data is not None:
-            evaluation_data["用药安全复盘"] = safety_feedback["summary"]
+            # 初级/中级本来就不要求定治，别拿「治疗方案未形成」去扣分或提示
+            incomplete_plan = safety_feedback.get("title") == "治疗方案未形成"
+            if not (incomplete_plan and session.difficulty_level in ("初级", "中级")):
+                evaluation_data["用药安全复盘"] = safety_feedback["summary"]
             eval_text = json.dumps(evaluation_data, ensure_ascii=False, indent=2)
         session.status = "completed"; session.score = score; session.ended_at = datetime.now()
         # 评价结果落库：重复打开已评价会话时直接回放，不再花一次模型调用

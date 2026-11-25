@@ -235,6 +235,10 @@ body {
           <span class="desc">复杂非典型病案，矛盾信息和传变</span>
         </div>
       </div>
+      <p class="stud-hint">
+        难度决定这次训练要走到哪一步：初级只要求辨病，中级加到平脉与析证，高级要求定治。
+        同一份医案可以用不同难度反复练，评分只计当前难度及以下的要点。
+      </p>
     </div>
 
     <div class="section">
@@ -315,9 +319,9 @@ body {
       <div id="caseTitle" style="font-weight:600;margin-bottom:6px;"></div>
       <pre id="caseAnswer" style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.7;color:#3d2b1f;"></pre>
     </div>
+    <div class="btn-row" id="nextActions" style="display:none;flex-wrap:wrap;gap:8px;"></div>
     <div class="btn-row">
-      <button class="btn btn-primary" onclick="closeEval()">知道了</button>
-      <button class="btn btn-outline" onclick="closeEval();resetAll();">开始新训练</button>
+      <button class="btn btn-outline" onclick="closeEval()">关闭</button>
     </div>
     <div class="related-texts" id="relatedTexts" style="display:none;margin-top:16px;border-top:1px solid #e0d5c0;padding-top:16px;">
       <h4 style="color:#5c3d2e;margin-bottom:10px;">相关经典条文</h4>
@@ -364,6 +368,7 @@ let sessionId = null;
 let sessionToken = null;
 let selectedDiff = '';
 let sessionActive = false;
+let currentCaseId = null;   // 本次会话的病案，用于"换个难度重练这题"
 let progress = {};
 
 // ===== 难度选择 =====
@@ -502,13 +507,14 @@ async function startSession() {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(Object.assign(
         { difficulty_level: selectedDiff, student_id: currentStudentId() || 'anonymous' },
-        presetCaseId ? { case_id: presetCaseId } : {}
+        (currentCaseId || presetCaseId) ? { case_id: currentCaseId || presetCaseId } : {}
       ))
     });
     if (!resp.ok) throw new Error((await resp.json()).detail || '创建失败');
     
     const data = await resp.json();
     sessionId = data.session_id;
+    currentCaseId = data.case_id || currentCaseId;
     sessionToken = data.session_token;
     sessionActive = true;
     rememberStudentId();
@@ -682,11 +688,40 @@ async function evaluateSession() {
     
     renderScoring(data.scoring);
 
+    // 结束后给出下一步：重来 / 挑战更高难度 / 返回首页（同一份病案）
+    renderNextActions(currentCaseId ? (data.difficulty_level || selectedDiff) : null);
     document.getElementById('evalModal').classList.add('show');
     
   } catch(e) {
     addMessage('system', '评价失败: ' + e.message);
   }
+}
+
+function renderNextActions(currentLevel) {
+  const box = document.getElementById('nextActions');
+  if (!currentLevel) { box.style.display = 'none'; return; }
+  const labels = { '初级': '只辨病', '中级': '加到析证', '高级': '走到定治' };
+  box.innerHTML = ['初级', '中级', '高级'].map(lv => {
+    const isCurrent = lv === currentLevel;
+    const text = isCurrent ? `重来一遍（${lv}）` : `挑战${lv} · ${labels[lv]}`;
+    return `<button class="btn ${isCurrent ? 'btn-primary' : 'btn-outline'}" onclick="retryLevel('${lv}')">${text}</button>`;
+  }).join('') + `<button class="btn btn-outline" onclick="goHome()">返回首页</button>`;
+  box.style.display = 'flex';
+}
+
+function goHome() {
+  closeEval();
+  location.href = '/train';
+}
+
+function retryLevel(level) {
+  const cid = currentCaseId;
+  if (!cid) { alert('本次会话没有记录病案，无法重练同一题'); return; }
+  closeEval();
+  resetAll();
+  currentCaseId = cid;          // resetAll 会清空，这里恢复
+  selectDiff(level);
+  startSession();
 }
 
 function closeEval() {
@@ -852,6 +887,7 @@ function resetAll() {
   sessionId = null;
   sessionToken = null;
   sessionActive = false;
+  currentCaseId = null;
   clearActiveSession();
   lastGuidanceStage = null;
   const gl = document.getElementById('guidanceLine');

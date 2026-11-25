@@ -96,5 +96,6 @@ def build_repeat_reply(key: str, exam: dict) -> str:
 
 
 def absent_reply(key: str) -> str:
-    """病案未记录该项检查。"""
-    return f"（本例未记录{examination_label(key)}结果）"
+    """病案未记录该项检查。只说「未记录」学生会卡住，直接告诉他下一步做什么。"""
+    label = examination_label(key)
+    return f"（本例病案没有提供{label}，可以继续问诊，靠症状与病史辨证）"

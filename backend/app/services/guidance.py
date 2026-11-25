@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 STAGE_LABEL = {
     "ask": "问诊",
+    "correct": "纠正",
     "examine": "切诊",
     "pulse": "平脉",
     "patho": "析证",
@@ -45,9 +46,19 @@ def build_guidance(
     if level == "初级":
         if progress.get("辨病"):
             return _pack("done", "辨病已完成，可以结束训练查看评价")
+        if progress.get("辨病错误"):
+            left = max(0, 3 - int(progress.get("wrong_diagnosis_count") or 0))
+            tail = f"（已错 {3 - left} 次，再错 {left} 次将结束本次训练）" if left else "（已达上限）"
+            return _pack("correct", f"这个判断与本病案不符，可以再结合舌脉与问诊信息考虑{tail}")
+        if progress.get("辨病模糊"):
+            return _pack(
+                "correct",
+                f"「{progress['辨病模糊']}」是笼统的病类，不是中医诊断。"
+                "请给出具体病名，例如胸痹、痹病、脏躁、黄疸",
+            )
         if turns < 2:
             return _pack("ask", "继续问诊：了解起病、诱因和主要症状")
-        return _pack("ask", "信息已较充分，请给出你的辨病结论：属何病、何证")
+        return _pack("ask", "信息已较充分，请说出中医诊断的病名即可（不必辨证型、不用开方）")
 
     # ---------- 中级 / 高级 ----------
     if not has_exam:
@@ -57,10 +68,12 @@ def build_guidance(
             "examine",
             "请进行切诊：可以说「我号一下脉」「看看舌头」，获取脉象与舌象",
         )
+    if progress.get("辨病错误"):
+        return _pack("correct", "这个判断与本病案不符，可以再结合舌脉与问诊信息考虑")
     if not progress.get("析证"):
         return _pack(
             "patho",
-            "脉象已取得。请说明这个脉象主什么，并结合兼症分析病机，"
+            "脉象已取得。请说明这个脉象主什么，并结合症分析病机，"
             "再与相近的证做一组鉴别",
         )
 

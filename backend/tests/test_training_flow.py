@@ -137,10 +137,27 @@ class TestAnalyzeProgress:
 class TestShouldEndSession:
     """会话自动结束边界"""
 
-    @pytest.mark.parametrize("rounds,expected", [(5, False), (49, False), (50, True), (51, True)])
-    def test_round_threshold(self, agent, rounds, expected):
-        history = [{"role": "user", "content": "继续"}] * rounds
-        assert agent._should_end_session(history, {}, "初级") is expected
+    @pytest.mark.parametrize("level,rounds,expected", [
+        ("初级", 14, False), ("初级", 15, True),
+        ("中级", 29, False), ("中级", 30, True),
+        ("高级", 49, False), ("高级", 50, True),
+    ])
+    def test_round_threshold(self, agent, level, rounds, expected):
+        """各难度轮数上限不同：初级 15、中级 30、高级 50。"""
+        assert agent._should_end_session(rounds, {}, level) is expected
+
+    def test_stage_completion_depends_on_level(self, agent):
+        """初级答出辨病就该收尾，中级还要求平脉与析证，高级要走满四阶段。"""
+        assert agent._should_end_session(0, {"辨病": True}, "初级") is True
+
+        assert agent._should_end_session(0, {"辨病": True}, "中级") is False
+        assert agent._should_end_session(
+            0, {"辨病": True, "平脉": True, "析证": True}, "中级") is True
+
+        assert agent._should_end_session(
+            0, {"辨病": True, "平脉": True, "析证": True}, "高级") is False
+        assert agent._should_end_session(
+            0, {"辨病": True, "平脉": True, "析证": True, "定治": True}, "高级") is True
 
 
 # ==================== 诊法直出 ====================
@@ -196,8 +213,9 @@ class TestExaminationDirect:
         assert msg_type == "hint", "重复检查应提示而非纠错"
 
     def test_missing_examination_reports_not_recorded(self, agent, db_session, active):
+        """病案没这项记录时，不能只说「未记录」把学生卡住，要给下一步。"""
         reply, _, _, _ = agent.process_message(db_session, active.id, "按按肚子")
-        assert "未记录" in reply
+        assert "没有提供" in reply and "问诊" in reply
 
     def test_examination_does_not_count_as_student_diagnosis(self, agent, db_session, active):
         """学生只是要求号脉，并未说出脉象含义，平脉不应被打勾。"""
