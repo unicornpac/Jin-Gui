@@ -23,6 +23,12 @@ from app.services.parser import DocumentParser, _split_by_sentence_end_number  #
 SOURCE_BOOK = "《金匮要略》"
 MIN_LEN = 8
 
+# 源文件名里的异体字要归一到通行写法，否则按标准篇名检索不到。
+# zhconv 的简体表不覆盖 CJK 扩展 B 区，只能显式列出。
+CHAPTER_FIXES = {
+    "\U00027312": "惑",   # 百合狐𧌒 → 百合狐惑
+}
+
 
 def clean_article(text: str) -> str:
     """去掉小节标题、方名行、方药组成与煎服法，只留条文正文。"""
@@ -52,7 +58,10 @@ def clean_article(text: str) -> str:
 
 
 def chapter_from_filename(name: str) -> str:
-    return re.sub(r"^\d+\s+", "", Path(name).stem).strip()
+    stem = re.sub(r"^\d+\s+", "", Path(name).stem).strip()
+    for bad, good in CHAPTER_FIXES.items():
+        stem = stem.replace(bad, good)
+    return stem
 
 
 def main() -> int:

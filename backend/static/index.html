@@ -313,6 +313,7 @@ tr:hover td { background:var(--hover); }
         <span>首页 <b id="vsPageUser" style="color:var(--text);">–</b></span>
         <span>训练页 <b id="vsPageTrain" style="color:var(--text);">–</b></span>
         <span>研习页 <b id="vsPageStudy" style="color:var(--text);">–</b></span>
+        <span style="margin-left:auto;">总计 <b id="vsPageTotal" style="color:var(--primary);">–</b></span>
       </div>
     </div>
 
@@ -1192,7 +1193,10 @@ async function loadVisitSummary() {
     document.getElementById('vsPageUser').textContent = s.by_page['/user'] || 0;
     document.getElementById('vsPageTrain').textContent = s.by_page['/train'] || 0;
     document.getElementById('vsPageStudy').textContent = s.by_page['/study'] || 0;
-    document.getElementById('vsRangeHint').textContent = `统计范围：近 ${days} 天`;
+    const pageTotal = Object.values(s.by_page).reduce((a, b) => a + b, 0);
+    document.getElementById('vsPageTotal').textContent = pageTotal;
+    const rangeTotal = s.daily.reduce((a, x) => a + x.count, 0);
+    document.getElementById('vsRangeHint').textContent = `统计范围：近 ${days} 天（合计 ${rangeTotal} 次）`;
 
     const max = Math.max(...s.daily.map(x => x.count), 1);
     document.getElementById('vsTrend').innerHTML = s.daily.map(x => {

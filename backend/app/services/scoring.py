@@ -109,11 +109,30 @@ def evaluate_points(
     points: Optional[Iterable],
     level: Optional[str],
     messages: Optional[Iterable[dict]],
+    revealed_stages: Optional[Iterable[str]] = None,
 ) -> List[dict]:
-    """逐条对照，返回每个要点的命中情况。"""
+    """逐条对照，返回每个要点的命中情况。
+
+    `revealed_stages` 里的关卡是「学生没答出来、由患者公布了答案」的，
+    这些关卡的要点一律不得分（权重仍计入分母，否则等于没扣分）。
+    """
     text = student_text(messages)
+    revealed = set(revealed_stages or [])
     results = []
     for point in select_points(points, level):
+        stage = str(point.get("stage") or "其他")
+        if stage in revealed:
+            results.append({
+                "stage": stage,
+                "text": str(point.get("text") or ""),
+                "weight": _weight_of(point),
+                "min_level": _min_level(point),
+                "auto": True,
+                "hit": False,
+                "evidence": None,
+                "revealed": True,
+            })
+            continue
         keywords = point.get("keywords") or []
         matched = _match_keywords(text, keywords)
         auto = bool(keywords)
@@ -239,6 +258,7 @@ def evaluate_scoring(
     medical_case: Any,
     level: Optional[str],
     messages: Optional[Iterable[dict]],
+    revealed_stages: Optional[Iterable[str]] = None,
 ) -> Optional[dict]:
     """计算一份会话的结构化得分；病案没配要点时返回 None（调用方沿用旧评分）。"""
     points = getattr(medical_case, "scoring_points", None) or []
@@ -246,7 +266,7 @@ def evaluate_scoring(
     if not points and not facts:
         return None
 
-    point_results = evaluate_points(points, level, messages)
+    point_results = evaluate_points(points, level, messages, revealed_stages)
     scoring = {
         "level": normalize_level(level),
         "excluded": excluded_count(points, level),

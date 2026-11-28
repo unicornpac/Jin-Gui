@@ -49,7 +49,9 @@ PROMPT = """你是中医教学系统的数据整理助手。请为下面的病�
   ],
   "scoring_points": [
     {{"stage": "辨病", "text": "辨为眩晕（水饮上犯）", "weight": 25,
-      "keywords": ["眩晕", "水饮"], "strict": false}}
+      "keywords": ["眩晕", "水饮"], "min_level": "初级", "strict": false}},
+    {{"stage": "定治", "text": "方选苓桂术甘汤", "weight": 20,
+      "keywords": ["苓桂术甘"], "min_level": "高级", "strict": true}}
   ]
 }}
 
@@ -58,9 +60,16 @@ PROMPT = """你是中医教学系统的数据整理助手。请为下面的病�
   饮食二便、情志睡眠等）。**不要列舌象和脉象**——那些靠切诊取得。
   keywords 写学生原话里可能出现的 2-4 种说法；must_ask 只给真正必须问到的标 true，
   标 true 的不要超过一半。
-- scoring_points 6-10 条。**权重是每个阶段的总和**：辨病合计 25、平脉合计 15、
-  析证合计 40、定治合计 20；同一阶段有多条时，按重要性在该阶段内分配（例如析证两条
-  就是 20+20）。每条给 2-4 个关键词，要覆盖同义说法（如「口苦」「嘴里发苦」）。
+
+- scoring_points **必须分三层**。min_level 逐条判定，**不要看这个病案本身是几难**，
+  只看这条要点考的是什么能力：
+  · 涉及「这是什么病」→ min_level 填「初级」（1-2 条）
+  · 涉及「脉象说明什么 / 病机是什么 / 与什么证鉴别」→ 填「中级」（2-4 条）
+  · 涉及「怎么治 / 用什么方 / 方义 / 前医之失 / 传变」→ 填「高级」（2-4 条）
+  三层都必须有，缺一层就算不合格。
+- **权重是每个阶段的总和**：辨病合计 25、平脉合计 15、析证合计 40、定治合计 20；
+  同一阶段有多条时按重要性在该阶段内分配。
+- 每条给 2-4 个关键词，覆盖同义说法（如「口苦」「嘴里发苦」）。
 - strict：凡涉及**方名**或**是否做了鉴别**的要点填 true，其余 false。
 - 关键词要具体，不要用「有病」「不适」这类泛词；每条至少 2 个字。
 - 所有条目的 min_level 一律填「{difficulty}」。
@@ -110,6 +119,7 @@ def cap_must_ask(facts):
 
 
 STAGE_TARGET = {"辨病": 25.0, "平脉": 15.0, "析证": 40.0, "定治": 20.0}
+STAGE_LEVEL = {"辨病": "初级", "平脉": "中级", "析证": "中级", "定治": "高级"}
 
 
 def normalize_weights(points):
@@ -158,18 +168,21 @@ def normalize(payload, difficulty):
         kws = clean_keywords(item.get("keywords"))
         if stage not in STAGES or len(text) < 4 or weight <= 0 or not kws:
             continue
+        # 不靠模型判断层级：按阶段硬映射，正好对应三阶梯
+        # 辨病=初级（只考"这是什么病"）、平脉/析证=中级（解释为什么）、定治=高级（怎么治）
+        level = STAGE_LEVEL.get(stage, "中级")
         points.append({
             "stage": stage,
             "text": text,
             "weight": weight,
             "keywords": kws,
-            "min_level": difficulty,
+            "min_level": level,
             "strict": bool(item.get("strict", False)),
         })
 
     if len(facts) < 3:
         return None, f"key_facts 仅 {len(facts)} 条"
-    if len(points) < 4:
+    if len(points) < 3:
         return None, f"scoring_points 仅 {len(points)} 条"
     stages = {p["stage"] for p in points}
     if len(stages) < 3:

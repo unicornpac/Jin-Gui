@@ -42,7 +42,7 @@ def build_guidance(
     has_exam = bool(done_exams)
     turns = int(student_turns or 0)
 
-    # ---------- 初级：只练辨病与主证 ----------
+    # ---------- 初级：问诊 → 舌脉 → 辨病 ----------
     if level == "初级":
         if progress.get("辨病"):
             return _pack("done", "辨病已完成，可以结束训练查看评价")
@@ -58,7 +58,15 @@ def build_guidance(
             )
         if turns < 2:
             return _pack("ask", "继续问诊：了解起病、诱因和主要症状")
-        return _pack("ask", "信息已较充分，请说出中医诊断的病名即可（不必辨证型、不用开方）")
+        if not has_exam:
+            return _pack(
+                "examine",
+                "请进行切诊——可以说「我号一下脉」「看看舌头」，舌脉也是辨证依据",
+            )
+        return _pack(
+            "ask",
+            "请根据问诊与舌脉结果写出中医诊断（只需病名，不必辨证型、不用开方）",
+        )
 
     # ---------- 中级 / 高级 ----------
     if not has_exam:
@@ -68,13 +76,28 @@ def build_guidance(
             "examine",
             "请进行切诊：可以说「我号一下脉」「看看舌头」，获取脉象与舌象",
         )
+    if progress.get("stage_revealed"):
+        stage = progress["stage_revealed"]
+        nxt = {"辨病": "说说脉象说明什么", "平脉": "说说病机，并与相近的证做一组鉴别",
+               "析证": "给出治法与方药", "定治": "本次训练已完成"}.get(stage, "继续")
+        return _pack("ask", f"「{stage}」已给出答案（该关不计分）。{nxt}")
+    if progress.get("stage_incomplete") == "析证":
+        return _pack("patho", "病机说到了，还差一组与相近证的鉴别")
+    if progress.get("stage_wrong"):
+        stage = progress["stage_wrong"]
+        counts = (progress.get("stage_wrong_counts") or {}).get(stage, 1)
+        return _pack("correct", f"{stage}这一关还没对上（本关已错 {counts} 次，满 3 次会公布答案）")
     if progress.get("辨病错误"):
         return _pack("correct", "这个判断与本病案不符，可以再结合舌脉与问诊信息考虑")
+    if not progress.get("平脉"):
+        return _pack(
+            "pulse",
+            "脉象已取得。请说明这个脉象主什么（例如「脉弦主饮邪内停」）",
+        )
     if not progress.get("析证"):
         return _pack(
             "patho",
-            "脉象已取得。请说明这个脉象主什么，并结合症分析病机，"
-            "再与相近的证做一组鉴别",
+            "脉象说清楚了。请分析病机，再与相近的证做一组鉴别",
         )
 
     if level == "高级":

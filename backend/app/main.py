@@ -168,18 +168,32 @@ async def ready_check():
         db_status = f"error: {e}"
         status = "degraded"
 
-    # 2. 检查 AI API 连通性（非阻塞，失败不影响就绪判定）
-    try:
-        base_url = (os.getenv("OPENAI_BASE_URL", "") or "").strip().rstrip("/")
-        if base_url:
+    # 2. 检查 AI 连通性（非阻塞，失败不影响就绪判定）
+    #    主端点（某高校自建 MaaS）内网域名可能解析不了，此时只要备用端点（DeepSeek）能用
+    #    就算就绪——实际调用也是这么回退的，健康检查不能比业务更严格。
+    async def _probe(url: str) -> tuple:
+        try:
             # trust_env=False：不读系统代理，否则内网端点会被 Clash 之类工具劫持
             async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
-                resp = await client.get(f"{base_url}/models")
-                ai_status = "ready" if resp.status_code < 500 else f"api_error({resp.status_code})"
+                resp = await client.get(f"{url}/models")
+                return (resp.status_code < 500), resp.status_code
+        except Exception as e:
+            return False, str(e)[:80]
+
+    primary = (os.getenv("OPENAI_BASE_URL", "") or "").strip().rstrip("/")
+    backup = (os.getenv("AI_FALLBACK_BASE_URL", "") or "").strip().rstrip("/")
+    if not primary and not backup:
+        ai_status = "not_configured"
+    else:
+        primary_ok, primary_detail = (await _probe(primary)) if primary else (False, "未配置")
+        if primary_ok:
+            ai_status = "ready"
+        elif backup:
+            backup_ok, backup_detail = await _probe(backup)
+            ai_status = ("ready(fallback)" if backup_ok
+                         else f"unreachable: primary={primary_detail} backup={backup_detail}")
         else:
-            ai_status = "not_configured"
-    except Exception as e:
-        ai_status = f"unreachable: {str(e)[:80]}"
+            ai_status = f"unreachable: {primary_detail}"
 
     http_status = 200 if status == "ok" else 503
     return JSONResponse(

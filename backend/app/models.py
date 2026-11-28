@@ -206,6 +206,8 @@ class TrainingSession(Base):
     verified_stages = Column(JSON, comment="已通过模型复核的思辨阶段")
     wrong_diagnosis_count = Column(Integer, default=0, nullable=False,
                                    comment="辨病连续答错次数，满 3 次强制结束")
+    stage_wrong_counts = Column(JSON, comment="各关卡连续答错次数")
+    revealed_stages = Column(JSON, comment="已由患者公布答案的关卡，不计分")
     started_at = Column(DateTime(timezone=True), default=datetime.now)
     ended_at = Column(DateTime(timezone=True), comment="结束时间")
 

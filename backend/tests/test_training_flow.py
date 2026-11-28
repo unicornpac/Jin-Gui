@@ -57,6 +57,7 @@ class TestAnalyzeProgress:
         assert single["辨病"] is False, "少于 2 条消息不应判定辨病完成"
 
     def test_beginner_disease_hit(self, agent, beginner_session):
+        beginner_session.examinations_done = ["pulse"]   # 初级也要先切诊
         history = [
             {"role": "user", "content": "你哪里不舒服"},
             {"role": "user", "content": "这像是湿病"},
@@ -72,13 +73,16 @@ class TestAnalyzeProgress:
             {"role": "user", "content": "你哪里不舒服"},
             {"role": "user", "content": "这是胸痹吧"},
         ]
+        p0 = agent._analyze_progress(base, intermediate_session)
+        assert p0["辨病"] is False, "没切诊之前不能判定辨病"
+
+        intermediate_session.examinations_done = ["pulse"]
         p1 = agent._analyze_progress(base, intermediate_session)
         assert p1["辨病"] is True
-        assert p1["平脉"] is False, "没有做切诊不能算平脉完成"
+        assert p1["平脉"] is False, "只号了脉、没说脉象含义，不能算平脉完成"
 
-        # 完成切诊后，平脉才算完成
-        intermediate_session.examinations_done = ["pulse"]
-        history = base + [{"role": "user", "content": "脉沉迟"}]
+        # 说出脉象含义（命中该案平脉要点）→ 平脉完成
+        history = base + [{"role": "user", "content": "脉沉迟，主阳虚阴凝"}]
         p2 = agent._analyze_progress(history, intermediate_session)
         assert p2["平脉"] is True
         assert p2["析证"] is False, "只提脉象、没有病机与鉴别，不算析证"
@@ -95,6 +99,7 @@ class TestAnalyzeProgress:
         advanced_session.examinations_done = ["pulse"]
         history = [
             {"role": "user", "content": "这是黄疸"},
+            {"role": "user", "content": "脉弦数，主湿热内盛"},
             {"role": "user", "content": "湿热蕴结中焦，与萎黄鉴别"},
             {"role": "user", "content": "治当清热利湿，用茵陈蒿汤"},
         ]
@@ -111,6 +116,7 @@ class TestAnalyzeProgress:
         advanced_session.examinations_done = ["pulse"]
         history = [
             {"role": "user", "content": "这是黄疸"},
+            {"role": "user", "content": "脉弦数，主湿热内盛"},
             {"role": "user", "content": "湿热蕴结中焦，与萎黄鉴别"},
             {"role": "user", "content": "用桂枝汤"},
         ]
@@ -159,6 +165,34 @@ class TestShouldEndSession:
         assert agent._should_end_session(
             0, {"辨病": True, "平脉": True, "析证": True, "定治": True}, "高级") is True
 
+
+
+class TestStageGating:
+    """中高级分关卡：每关独立计数，满 3 次公布答案并强制过关。"""
+
+    def test_three_wrongs_reveal_answer_and_pass(self, agent, db_session, intermediate_session):
+        intermediate_session.examinations_done = ["pulse"]
+        db_session.commit()
+        # 先问一句（判定要求至少两轮发言），再连错三次
+        agent.process_message(db_session, intermediate_session.id, "还有什么不舒服")
+        for word in ("痹病", "黄疸", "虚劳"):
+            _, _, _, progress = agent.process_message(
+                db_session, intermediate_session.id, f"我认为是{word}")
+        assert progress.get("辨病") is True, "错满 3 次应公布答案并过关"
+        assert progress.get("stage_revealed") == "辨病"
+        row = db_session.query(type(intermediate_session)).filter(
+            type(intermediate_session).id == intermediate_session.id).first()
+        assert "辨病" in (row.revealed_stages or [])
+
+    def test_stage_passes_are_persisted(self, agent, db_session, intermediate_session):
+        intermediate_session.examinations_done = ["pulse"]
+        db_session.commit()
+        agent.process_message(db_session, intermediate_session.id, "我认为是胸痹")
+        agent.process_message(db_session, intermediate_session.id, "脉沉迟，主阳虚阴凝")
+        row = db_session.query(type(intermediate_session)).filter(
+            type(intermediate_session).id == intermediate_session.id).first()
+        assert "辨病" in (row.verified_stages or [])
+        assert "平脉" in (row.verified_stages or []), "后面再说别的，平脉不能退回未完成"
 
 # ==================== 诊法直出 ====================
 
@@ -256,10 +290,17 @@ class TestGuidance:
         assert g["stage"] == "examine"
         assert "切诊" in g["text"]
 
-    def test_after_examination_goes_straight_to_patho(self):
-        """取脉即平脉完成，提示直接进入析证（脉象含义归析证）。"""
+    def test_examination_asks_for_pulse_meaning(self):
+        """取脉之后还要求说明脉象含义，平脉才算过。"""
         from app.services.guidance import build_guidance
         g = build_guidance("中级", {**self.IDLE, "辨病": True}, ["pulse"], 3)
+        assert g["stage"] == "pulse"
+        assert "脉象" in g["text"]
+
+    def test_after_pulse_goes_to_patho(self):
+        """平脉过了才提示病机与鉴别。"""
+        from app.services.guidance import build_guidance
+        g = build_guidance("中级", {**self.IDLE, "辨病": True, "平脉": True}, ["pulse"], 4)
         assert g["stage"] == "patho"
         assert "鉴别" in g["text"]
 

@@ -274,8 +274,10 @@ def should_end_session(turn_count: int, progress: dict, level: str) -> bool:
     （`_get_history_messages(limit=20)`），最多 20 条，中级 30、高级 50 的
     上限永远触发不了。
     """
-    # 辨病连错三次：继续猜下去没有教学价值，直接结束
-    if progress and int(progress.get("wrong_diagnosis_count") or 0) >= MAX_WRONG_DIAGNOSIS:
+    # 初级：辨病连错三次直接结束（没有后续关卡可走）
+    # 中高级不在这里结束——它们由调用方「公布答案 + 强制过关」处理
+    if (level == "初级"
+            and int(progress.get("wrong_diagnosis_count") or 0) >= MAX_WRONG_DIAGNOSIS):
         return True
 
     stages = LEVEL_STAGES.get(level, tuple(STAGE_KEYS))
@@ -305,3 +307,102 @@ def build_progress_hint(progress: dict) -> str:
     if not hints:
         return ''
     return '## 当前进度行为指令（医生已达到的进度，据此调整你的态度）\n' + '\n'.join(hints)
+
+
+# ==================== 分关卡判定 ====================
+
+LEVEL_ORDER = {"初级": 0, "中级": 1, "高级": 2}
+
+STAGE_SEQUENCE = {
+    "初级": ("辨病",),
+    "中级": ("辨病", "平脉", "析证"),
+    "高级": ("辨病", "平脉", "析证", "定治"),
+}
+
+# 各关「学生明显在答这一关」的触发词：出现这些说明他在表态，只是没答对
+STAGE_ATTEMPT_WORDS = {
+    "平脉": ("脉", "主", "提示", "说明"),
+    "析证": ("病机", "因为", "由于", "导致", "所以", "鉴别", "区别"),
+    "定治": ("治", "方", "汤", "宜", "当用"),
+}
+
+
+def stage_points(case, stage: str, level: str) -> list:
+    """该关在当前难度下要求答到的要点（取 min_level <= 当前难度）。"""
+    order = LEVEL_ORDER.get(level, 0)
+    return [
+        p for p in (getattr(case, "scoring_points", None) or [])
+        if p.get("stage") == stage and LEVEL_ORDER.get(p.get("min_level"), 0) <= order
+    ]
+
+
+def hits_points(points: list, text: str) -> int:
+    """命中几个要点的关键词。"""
+    count = 0
+    for point in points:
+        if any(k and k in text for k in (point.get("keywords") or [])):
+            count += 1
+    return count
+
+
+def attempts_stage(stage: str, text: str) -> bool:
+    """学生这句话是否在就这一关表态（用词判断，不看对错）。"""
+    words = STAGE_ATTEMPT_WORDS.get(stage, ())
+    return any(w in text for w in words)
+
+
+def current_stage_of(progress: dict, level: str) -> str:
+    """当前该答哪一关：按顺序第一个没通过的。"""
+    for stage in STAGE_SEQUENCE.get(level, ("辨病",)):
+        if not progress.get(stage):
+            return stage
+    return "已完成"
+
+
+def judge_stage(case, stage: str, text: str, level: str,
+                pulse_done: bool, diff_hit: bool) -> str:
+    """判定学生对当前关的表态：pass / wrong / neutral。
+
+    neutral = 没在说这一关（还在问诊、或者跳着答别的关），不计错。
+    """
+    if not text:
+        return "neutral"
+
+    if stage == "辨病":
+        return "neutral"      # 辨病由调用方的病名词表判定，这里不重复
+
+    if stage == "平脉":
+        if not pulse_done:
+            return "neutral"
+        points = stage_points(case, "平脉", level)
+        if hits_points(points, text) > 0:
+            return "pass"
+        return "wrong" if attempts_stage("平脉", text) else "neutral"
+
+    if stage == "析证":
+        points = stage_points(case, "析证", level)
+        if hits_points(points, text) > 0:
+            return "pass"
+        if attempts_stage("析证", text):
+            return "wrong"
+        return "neutral"
+
+    if stage == "定治":
+        points = stage_points(case, "定治", level)
+        if hits_points(points, text) > 0:
+            return "pass"
+        if attempts_stage("定治", text):
+            return "wrong"
+        return "neutral"
+
+    return "neutral"
+
+
+def build_stage_answer(case, stage: str, level: str) -> str:
+    """该关的正确答案，用于错满 3 次后由患者公布。"""
+    points = stage_points(case, stage, level)
+    if points:
+        texts = [p.get("text") or "" for p in points if p.get("text")]
+        if texts:
+            return "；".join(texts[:2])
+    return ""

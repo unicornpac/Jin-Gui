@@ -365,6 +365,8 @@ class TestEvaluateSessionWithScoring:
 
     def test_no_config_keeps_legacy_behaviour(self, db_session, agent,
                                               sample_case_beginner):
+        sample_case_beginner.scoring_points = None   # 本例专门测「没有要点」的情形
+        db_session.commit()
         session = self._prepare(db_session, agent, sample_case_beginner,
                                 "初级", ["我看看"])
         result = agent.evaluate_session(db_session, session.id)

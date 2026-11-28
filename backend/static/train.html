@@ -67,6 +67,8 @@ body {
 }
 .progress-step.active { background:#f0e2cc; color:#5c3d2e; font-weight:600; }
 .progress-step.done { background:#e8f0e0; color:#3d5c2e; }
+.progress-step.revealed { background:#f3ece0; color:#8a7a6a; border:1px dashed #c9b99a; }
+.progress-step.revealed .dot { background:#c9b99a; }
 .progress-step .dot {
   width:10px; height:10px; border-radius:50%; background:#d4c4a8; flex-shrink:0;
 }
@@ -255,7 +257,7 @@ body {
     </div>
 
     <div class="section" id="progressSection" style="display:none">
-      <h3>🧭 辨治进度</h3>
+      <h3>辨治进度</h3>
       <div class="progress-steps">
         <div class="progress-step" id="step1"><span class="dot"></span>辨病</div>
         <div class="progress-step" id="step2"><span class="dot"></span>平脉</div>
@@ -270,7 +272,7 @@ body {
     </div>
 
     <div class="section">
-      <button class="btn btn-outline" onclick="openFeedback()" style="border-color:#d4c4a8;color:#8a7a6a;">💬 用户反馈</button>
+      <button class="btn btn-outline" onclick="openFeedback()" style="border-color:#d4c4a8;color:#8a7a6a;">用户反馈</button>
     </div>
   </div>
 
@@ -863,11 +865,12 @@ function updateProgress(p) {
   const stageToStep = { ask: '辨病', examine: '平脉', patho: '析证', treat: '定治', done: null };
   const activeLabel = p.guidance ? stageToStep[p.guidance.stage] : (p.current_stage || '辨病');
 
+  const revealed = p.revealed_stages || [];
   order.forEach(([id, label]) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.classList.remove('done', 'active', 'todo', 'muted');
-    if (p[label]) { el.classList.add('done'); return; }
+    el.classList.remove('done', 'revealed', 'active', 'todo', 'muted');
+    if (p[label]) { el.classList.add(revealed.includes(label) ? 'revealed' : 'done'); return; }
     if (!scope.includes(label)) { el.classList.add('muted'); return; }
     if (label === activeLabel) { el.classList.add('active'); return; }
     el.classList.add('todo');
@@ -878,7 +881,11 @@ function updateProgress(p) {
     const labelMap = { pulse: '脉', tongue: '舌', abdomen: '腹', face: '面', throat: '咽' };
     const exams = (p.examinations_done || []).map(k => labelMap[k] || k);
     const turns = p.student_turns != null ? p.student_turns : 0;
-    meta.textContent = `问诊 ${turns} 轮` + (exams.length ? ` · 已取 ${exams.join('、')}` : '');
+    const wrongs = p.stage_wrong_counts || {};
+    const wrongNow = wrongs[activeLabel] || 0;
+    let line = `问诊 ${turns} 轮` + (exams.length ? ` · 已取 ${exams.join('、')}` : '');
+    if (wrongNow > 0) line += ` · 本关已错 ${wrongNow} 次`;
+    meta.textContent = line;
   }
 }
 

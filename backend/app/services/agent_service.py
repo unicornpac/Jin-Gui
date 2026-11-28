@@ -28,6 +28,8 @@ from .safety import (
 from .western_data import generate_western_test_context
 from .progress import (
     classify_response, extract_decision_point, should_end_session, build_progress_hint,
+    judge_stage, current_stage_of, stage_points, hits_points, attempts_stage,
+    build_stage_answer,
     DISEASE_KEYWORDS, PATHOGENESIS_KEYWORDS, DIFFERENTIAL_KEYWORDS,
     TREATMENT_METHOD_KEYWORDS, FORMULA_KEYWORDS, statement_text,
 )
@@ -156,6 +158,25 @@ class TrainingAgent:
             except ImportError:
                 logger.warning("openai 未安装")
 
+        # 备用端点：主端点（如某高校自建 MaaS，内网域名）解析不了或连不上时自动切换。
+        # 与模型级回退不同，这里是换 base_url + key，用于「主服务整个不可达」的情况。
+        self.fallback_client = None
+        self.fallback_endpoint_model = ""
+        fb_base = (os.getenv("AI_FALLBACK_BASE_URL") or "").strip().rstrip("/")
+        fb_key = (os.getenv("AI_FALLBACK_API_KEY") or "").strip()
+        if fb_base and fb_key:
+            try:
+                from .llm_client import build_openai_client
+                self.fallback_client = build_openai_client(
+                    api_key=fb_key, base_url=fb_base,
+                    timeout=self.timeout_seconds, max_retries=0,
+                )
+                self.fallback_endpoint_model = (
+                    (os.getenv("AI_FALLBACK_MODEL") or "").strip() or "deepseek-chat"
+                )
+            except ImportError:
+                logger.warning("openai 未安装，备用端点不可用")
+
     @staticmethod
     def _detect_classic_context(medical_case: MedicalCase) -> str:
         """根据病案内容推断经典范围"""
@@ -182,15 +203,16 @@ class TrainingAgent:
     def _call_llm(self, system_prompt: str, messages_history: List[dict],
                   user_message: str = None, temperature: float = 0.7,
                   max_tokens: int = 1500, allow_fallbacks: bool = True) -> str:
-        if not self.client:
+        if not self.client and not self.fallback_client:
             return self._fallback_response(user_message)
         msgs = [{"role": "system", "content": system_prompt}]
         msgs.extend(messages_history)
         if user_message is not None:
             msgs.append({"role": "user", "content": user_message})
 
-        models_to_try = [self.model]
-        if allow_fallbacks:
+        # 主端点没配时直接跳备用端点（client 为 None 时不能去调它）
+        models_to_try = [self.model] if self.client else []
+        if allow_fallbacks and self.client:
             models_to_try.extend(self.fallback_models)
 
         last_error = None
@@ -210,6 +232,24 @@ class TrainingAgent:
             except Exception as exc:
                 last_error = exc
                 logger.warning("LLM 调用失败（模型 %s）: %s", model, exc)
+
+        # 主端点彻底不可用时，切到备用端点再试一次
+        if self.fallback_client:
+            try:
+                resp = self.fallback_client.chat.completions.create(
+                    model=self.fallback_endpoint_model,
+                    messages=msgs,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout=self.timeout_seconds,
+                )
+                content = self._clean_text(resp.choices[0].message.content)
+                if content:
+                    logger.info("主端点不可用，已切换到备用端点（%s）", self.fallback_endpoint_model)
+                    return content
+            except Exception as exc:
+                last_error = exc
+                logger.warning("备用端点也失败（模型 %s）: %s", self.fallback_endpoint_model, exc)
 
         logger.error("LLM 请求失败，尝试模型：%s", ", ".join(models_to_try))
         return self._fallback_response(user_message, str(last_error) if last_error else None)
@@ -474,12 +514,53 @@ class TrainingAgent:
                 session, progress, history, session.difficulty_level
             )
 
-            # 辨病连续答错计数：说对清零，说错加一，满 3 次强制结束
+            # 辨病连续答错计数：说对清零，说错加一。初级满 3 次结束，
+            # 中高级满 3 次由患者公布答案并强制过关（下面处理）。
             if progress.get("辨病"):
                 session.wrong_diagnosis_count = 0
             elif progress.get("辨病错误"):
                 session.wrong_diagnosis_count = (session.wrong_diagnosis_count or 0) + 1
             progress["wrong_diagnosis_count"] = session.wrong_diagnosis_count or 0
+
+            # 通过即落库，下一轮直接沿用
+            _passed = [s for s in ("辨病", "平脉", "析证", "定治") if progress.get(s)]
+            if _passed:
+                session.verified_stages = sorted(set(session.verified_stages or []) | set(_passed))
+
+            # 中高级：每关独立计数，满 3 次公布答案并过关
+            reveal_text = ""
+            level = session.difficulty_level
+            if level != "初级":
+                current = current_stage_of(progress, level)
+                counts = dict(session.stage_wrong_counts or {})
+                if current == "已完成":
+                    counts.pop("已完成", None)
+                elif progress.get("stage_wrong") == current and not progress.get(current):
+                    counts[current] = int(counts.get(current) or 0) + 1
+                else:
+                    counts[current] = 0
+                session.stage_wrong_counts = counts
+                progress["stage_wrong_counts"] = counts
+
+                if counts.get(current, 0) >= 3:
+                    answer = build_stage_answer(medical_case, current, level)
+                    revealed = list(session.revealed_stages or [])
+                    if current not in revealed:
+                        revealed.append(current)
+                    session.revealed_stages = revealed
+                    counts[current] = 0
+                    session.stage_wrong_counts = counts
+                    progress[current] = True
+                    progress["stage_revealed"] = current
+                    _title = re.sub(r"^【[^】]*】", "", medical_case.title or "")
+                    _name = _title.split("——")[0].strip()
+                    reveal_text = {
+                        "辨病": f"本病应当诊断为：{answer or _name}。请继续分析——对「{_name}」，你的理解是什么？",
+                        "平脉": f"这脉象主的是：{answer}。接着说说病机和鉴别吧。",
+                        "析证": f"病机上：{answer}。再说说该怎么治。",
+                        "定治": f"这个病当以：{answer}。",
+                    }.get(current, f"正确答案是：{answer}。")
+                    progress["stage_wrong_counts"] = counts
 
             # history 已包含刚存入的学生消息；传给 _call_llm 时只追加一次当前输入。
             reply_history = self._history_before_current_input(history, student_content)
@@ -501,10 +582,24 @@ class TrainingAgent:
                 system_prompt, reply_history, student_content
             ) or "【系统】AI 返回为空，请重新发送消息。"
 
+            # 某关错满 3 次：患者直接公布答案，不再让模型自由发挥
+            if reveal_text:
+                agent_response = reveal_text
+
+            # 初级没有后续关卡，错满 3 次直接结束；结束前也要把答案说清楚，
+            # 否则学生到最后都不知道正确答案（只能去评价页翻揭晓）
+            if (level == "初级" and not progress.get("辨病")
+                    and int(session.wrong_diagnosis_count or 0) >= 3):
+                _answer = build_stage_answer(medical_case, "辨病", level)
+                agent_response = (
+                    f"（本次训练到此结束）本病应当诊断为：{_answer}。"
+                    "可以重来一遍，或换个难度再练。"
+                )
+
             # 辨病成立后，患者必须明确表示「被说中」。模型常常仍然往下问
             # （"我不太懂，您说说我是啥毛病"），学生根本不知道自己说对了没有。
             # 这里做代码兜底：整段对话里还没确认过，就补一句。
-            if progress.get("辨病"):
+            if progress.get("辨病") and not progress.get("stage_revealed"):
                 _confirmed = any(
                     m.get("role") == "assistant"
                     and re.search(r"对对|说中|就是这|这么回事|没错|您说的这", m.get("content") or "")
@@ -590,6 +685,9 @@ class TrainingAgent:
         progress["level"] = session.difficulty_level
         progress["student_turns"] = turns
         progress["examinations_done"] = list(session.examinations_done or [])
+        # 前端要展示「本关已错几次」「哪一关是公布答案后过的」
+        progress["revealed_stages"] = list(session.revealed_stages or [])
+        progress["stage_wrong_counts"] = dict(session.stage_wrong_counts or {})
         return progress
 
     def _handle_examination(self, medical_case: MedicalCase, session, exam_key: str, db):
@@ -684,10 +782,18 @@ class TrainingAgent:
         """
         progress = {"辨病": False, "平脉": False, "析证": False, "定治": False,
                     "message_count": len(history), "current_stage": "辨病"}
+        # 已经判定通过的关卡不再重算：判定依赖历史文本，窗口一变就会回退
+        for _stage in (getattr(session, "verified_stages", None) or []):
+            if _stage in progress:
+                progress[_stage] = True
         # 只统计学生自己的表述：患者的话（包括直出的脉舌体征）不能算作学生的辨证
-        raw_text = " ".join([
-            m.get("content", "") for m in history[-10:] if m.get("role") == "user"
-        ])
+        # 必须看全部学生发言：只取最近若干条时，前面说过的病名会被挤出窗口，
+        # 一旦滑出，辨病就会被重新判成未完成（实测过：第 7 轮时辨病被重置）
+        _user_msgs = [m.get("content", "") for m in history if m.get("role") == "user"]
+        raw_text = " ".join(_user_msgs)
+        # 「本轮」文本：判断学生是不是在答这一关，只能看这一轮。
+        # 用整段历史会导致上一轮问过「脉」之后，每轮都被算成在答平脉关。
+        latest_text = statement_text(_user_msgs[-1]) if _user_msgs else ""
         # 再只留陈述句：问句（"是不是少阳病？"）和否定句（"不像少阳"）
         # 都带关键词，但都不是「做出判断」，不能用来点亮阶段
         all_text = statement_text(raw_text)
@@ -721,12 +827,20 @@ class TrainingAgent:
 
         level = session.difficulty_level
 
+        # 病案没有脉舌记录时豁免切诊要求（原文就缺，不能卡住学生）
+        pulse_required = bool(_case and (_case.examinations or {}))
+        if not pulse_done and pulse_required and level != "初级":
+            # 从初级延续到中级时，脉已经号过了，不该再要求一次
+            pulse_done = self._has_prior_pulse(session)
+        gate_ok = pulse_done or not pulse_required
+
         if level == "初级":
-            if disease_hit and turns >= 2 and not disease_wrong:
+            if disease_hit and turns >= 2 and not disease_wrong and gate_ok:
                 progress["辨病"] = True
                 progress["current_stage"] = "主证识别"
             elif disease_wrong and turns >= 2:
                 progress["辨病错误"] = True
+                progress["stage_wrong"] = "辨病"
             elif vague_names and not disease_hit and turns >= 2:
                 progress["辨病模糊"] = vague_names[-1]
             merged = self._merge_ai_progress(progress, ai_progress, treatment_assessment)
@@ -736,22 +850,44 @@ class TrainingAgent:
                 merged["current_stage"] = "主证识别"
             return merged
 
-        if disease_hit and turns >= 2 and not disease_wrong:
-            progress["辨病"] = True
-            progress["current_stage"] = "平脉"
-        elif disease_wrong and turns >= 2:
-            progress["辨病错误"] = True
-        if progress["辨病"] and pulse_done:
-            progress["平脉"] = True
-            progress["current_stage"] = "析证"
-        # 析证要求：病机 + 至少一组鉴别
-        if progress["平脉"] and patho_hit and diff_hit:
-            progress["析证"] = True
-            progress["current_stage"] = "定治" if level == "高级" else "已完成"
+        # 逐关判定。注意不能用 if/elif 串——一次调用要能把历史里已经答过的
+        # 多个关卡都算上（学生前面说病名、后面说脉象，不能只推进一关）。
+        if not progress["辨病"]:
+            if disease_hit and turns >= 2 and not disease_wrong and gate_ok:
+                progress["辨病"] = True
+            elif disease_wrong and turns >= 2:
+                progress["辨病错误"] = True
+                progress["stage_wrong"] = "辨病"
 
-        if level == "高级" and progress["析证"] and method_hit and formula_hit:
-            progress["定治"] = True
-            progress["current_stage"] = "已完成"
+        if progress["辨病"] and not progress["平脉"]:
+            pulse_points = stage_points(_case, "平脉", level)
+            if not pulse_points:
+                # 该案没配要点：退回旧规则（做过切诊即算完成），不能把学生卡死
+                progress["平脉"] = pulse_done
+            elif pulse_done and hits_points(pulse_points, all_text) > 0:
+                progress["平脉"] = True
+            elif pulse_done and attempts_stage("平脉", latest_text):
+                progress["stage_wrong"] = "平脉"
+
+        if progress["平脉"] and not progress["析证"]:
+            syndrome_points = stage_points(_case, "析证", level)
+            if not syndrome_points:
+                progress["析证"] = bool(patho_hit and diff_hit)   # 无要点时用旧规则
+            elif hits_points(syndrome_points, all_text) > 0 and diff_hit:
+                progress["析证"] = True
+            elif hits_points(syndrome_points, all_text) > 0 and not diff_hit:
+                progress["stage_incomplete"] = "析证"      # 只说了病机，还缺鉴别
+            elif attempts_stage("析证", latest_text):
+                progress["stage_wrong"] = "析证"
+
+        if level == "高级" and progress["析证"] and not progress["定治"]:
+            treat_points = stage_points(_case, "定治", level)
+            if not treat_points:
+                progress["定治"] = bool(method_hit and formula_hit)   # 无要点时用旧规则
+            elif hits_points(treat_points, all_text) > 0:
+                progress["定治"] = True
+            elif attempts_stage("定治", latest_text):
+                progress["stage_wrong"] = "定治"
 
         merged = self._merge_ai_progress(progress, ai_progress, treatment_assessment)
         # AI 只补布尔判断，阶段名一律按规则重算——否则模型会在定治未完成时
@@ -954,6 +1090,27 @@ class TrainingAgent:
     def _should_end_session(self, turn_count: int, progress: dict, level: str) -> bool:
         return should_end_session(turn_count, progress, level)
 
+    @staticmethod
+    def _has_prior_pulse(session) -> bool:
+        """该学生对同一病案，在别的会话里是否已经做过切诊。
+
+        初级要求切诊、中级又要求一次的话，从初级延续上来的学生会被重复卡一道。
+        """
+        from sqlalchemy.orm import object_session
+        db = object_session(session)
+        if db is None:
+            return False
+        from ..models import TrainingSession as _TS
+        prior = (
+            db.query(_TS)
+            .filter(_TS.student_id == session.student_id,
+                    _TS.case_id == session.case_id,
+                    _TS.id != session.id,
+                    _TS.examinations_done.isnot(None))
+            .all()
+        )
+        return any("pulse" in (row.examinations_done or []) for row in prior)
+
     def _count_session_messages(self, db: Session, session_id: int) -> int:
         """会话真实消息总数——不能用上下文窗口的长度代替。"""
         return db.query(sqlfunc.count(SessionMessage.id)).filter(
@@ -1036,7 +1193,8 @@ class TrainingAgent:
         # 先算规则评分：评价提示词要把它带进去。否则模型会给出与学生实际表现
         # 相反的评语——实测里学生一个方都没开，评价却写着「定治合理」。
         scoring = evaluate_scoring(
-            medical_case, session.difficulty_level, all_messages
+            medical_case, session.difficulty_level, all_messages,
+            revealed_stages=session.revealed_stages,
         ) if medical_case else None
         # 规则判不上的部分交给模型复核一遍：学生说「嘴巴干又苦」而要点写的是「口苦」，
         # 纯关键词永远追不上表达方式。复核失败就保留规则结果。

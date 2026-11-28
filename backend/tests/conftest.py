@@ -16,6 +16,8 @@ import tempfile
 os.environ.setdefault("ADMIN_PASSWORD", "jingui2026")
 os.environ.setdefault("SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="jingui-tests-"))
+# 强制清空（不能用 setdefault：pytest 收集阶段 .env 可能已加载真实值，
+# 会让测试真的去连网络端点，整套测试从 8 秒变成两分半）
 for _key in (
     "OPENAI_BASE_URL",
     "OPENAI_API_KEY",
@@ -23,8 +25,12 @@ for _key in (
     "BAIDU_API_KEY",
     "BAIDU_SECRET_KEY",
     "AI_MODEL",
+    "AI_FALLBACK_BASE_URL",
+    "AI_FALLBACK_API_KEY",
+    "AI_FALLBACK_MODEL",
+    "AI_FALLBACK_MODELS",
 ):
-    os.environ.setdefault(_key, "")
+    os.environ[_key] = ""
 
 import pytest
 from sqlalchemy import create_engine
@@ -111,6 +117,13 @@ def sample_case_beginner(db_session):
         difficulty_level="初级",
         teaching_points="辨病关键：身痛重着+恶寒发热=表湿。与太阳伤寒鉴别：彼无'重着'感。",
         correct_answer="辨病：湿病。平脉：N/A。析证：表湿证，湿邪在表，卫阳被遏。定治：麻黄加术汤，发汗解表祛湿。",
+        examinations={"pulse": {"text": "脉浮紧"}, "tongue": {"text": "舌苔白腻"}},
+        scoring_points=[
+            {"stage": "辨病", "text": "辨为湿病", "weight": 25,
+             "keywords": ["湿病"], "min_level": "初级", "strict": False},
+            {"stage": "析证", "text": "表湿证，湿邪在表", "weight": 40,
+             "keywords": ["表湿", "湿邪在表"], "min_level": "中级", "strict": False},
+        ],
     )
     db_session.add(case)
     db_session.commit()
@@ -130,6 +143,15 @@ def sample_case_intermediate(db_session):
         difficulty_level="中级",
         teaching_points="辨病关键：胸痛彻背+脉沉迟=胸痹。鉴别：与心痛（真心痛）鉴别，彼痛更剧烈且危重。",
         correct_answer="辨病：胸痹。平脉：脉沉迟（阳虚阴凝）。析证：上焦阳虚，阴寒上乘，胸阳不展。定治：栝楼薤白白酒汤，通阳散结、豁痰下气。",
+        examinations={"pulse": {"text": "脉沉迟"}, "tongue": {"text": "舌淡苔白"}},
+        scoring_points=[
+            {"stage": "辨病", "text": "辨为胸痹", "weight": 25,
+             "keywords": ["胸痹"], "min_level": "初级", "strict": False},
+            {"stage": "平脉", "text": "脉沉迟主阳虚阴凝", "weight": 15,
+             "keywords": ["沉迟", "阳虚阴凝"], "min_level": "中级", "strict": False},
+            {"stage": "析证", "text": "上焦阳虚，阴寒上乘，胸阳不展", "weight": 40,
+             "keywords": ["上焦阳虚", "阴寒上乘"], "min_level": "中级", "strict": False},
+        ],
     )
     db_session.add(case)
     db_session.commit()
@@ -149,6 +171,17 @@ def sample_case_advanced(db_session):
         difficulty_level="高级",
         teaching_points="辨病关键：身目黄染+小便黄赤=黄疸。需与萎黄鉴别（彼不伴小便黄）。析证注意湿热偏重。",
         correct_answer="辨病：黄疸。平脉：脉弦数（湿热内盛）。析证：湿热蕴结中焦，熏蒸肝胆，胆汁外溢。定治：茵陈蒿汤，清热利湿退黄。",
+        examinations={"pulse": {"text": "脉弦数"}, "tongue": {"text": "舌红苔黄腻"}},
+        scoring_points=[
+            {"stage": "辨病", "text": "辨为黄疸", "weight": 25,
+             "keywords": ["黄疸"], "min_level": "初级", "strict": False},
+            {"stage": "平脉", "text": "脉弦数主湿热内盛", "weight": 15,
+             "keywords": ["弦数", "湿热内盛"], "min_level": "中级", "strict": False},
+            {"stage": "析证", "text": "湿热蕴结中焦，熏蒸肝胆", "weight": 40,
+             "keywords": ["湿热蕴结", "熏蒸"], "min_level": "中级", "strict": False},
+            {"stage": "定治", "text": "清热利湿，方用茵陈蒿汤", "weight": 20,
+             "keywords": ["清热利湿", "茵陈蒿"], "min_level": "高级", "strict": True},
+        ],
     )
     db_session.add(case)
     db_session.commit()
